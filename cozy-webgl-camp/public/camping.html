@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WebGL Camping Scene</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#87CEEB;font-family:system-ui,sans-serif;color:#fff}
+  canvas{display:block}
+  #ui{
+    position:fixed;top:12px;right:12px;z-index:10;
+    background:rgba(20,20,28,.7);backdrop-filter:blur(8px);
+    padding:14px 16px;border-radius:12px;min-width:240px;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);
+    font-size:13px;line-height:1.6;
+    max-height:90vh;overflow-y:auto;
+  }
+  #ui h3{margin:0 0 8px;font-size:14px;letter-spacing:.5px;text-transform:uppercase;opacity:.9}
+  #ui label{display:block;margin-top:8px;opacity:.85}
+  #ui input[type=range]{width:100%;accent-color:#ff8a3d}
+  #ui .stat{display:flex;justify-content:space-between;margin-top:4px}
+  #ui .stat b{color:#ffd27a}
+  #ui hr{border:none;border-top:1px solid rgba(255,255,255,.15);margin:10px 0}
+  #hint{
+    position:fixed;left:12px;bottom:12px;z-index:10;
+    background:rgba(20,20,28,.6);padding:10px 14px;border-radius:10px;
+    font-size:12px;line-height:1.5;max-width:420px
+  }
+  kbd{background:#2a2a36;border:1px solid #444;border-radius:4px;padding:1px 6px;font-size:11px}
+  #modeIndicator{
+    position:fixed;left:12px;top:12px;z-index:10;
+    background:rgba(20,20,28,.75);backdrop-filter:blur(8px);
+    padding:10px 16px;border-radius:10px;
+    font-size:14px;font-weight:600;letter-spacing:.3px;
+    box-shadow:0 4px 16px rgba(0,0,0,.3);
+    transition:background .3s;
+  }
+  #modeIndicator.kayak{border-left:3px solid #ff8844}
+  #modeIndicator.can{border-left:3px solid #44cc66}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h3>🏕️ Campsite</h3>
+  <label>🔥 Fire Intensity: <span id="fireVal">2.0</span></label>
+  <input id="fireSlider" type="range" min="0" max="5" step="0.1" value="2" />
+  <label>☀️ Sun Angle: <span id="sunVal">45°</span></label>
+  <input id="sunSlider" type="range" min="0" max="180" step="1" value="45" />
+  <label>🔥 Fire X: <span id="fxVal">0</span></label>
+  <input id="fireX" type="range" min="-5" max="5" step="0.1" value="0" />
+  <label>🔥 Fire Z: <span id="fzVal">0</span></label>
+  <input id="fireZ" type="range" min="-3" max="5" step="0.1" value="0" />
+  <hr>
+  <div class="stat">🐟 Fish Caught: <b id="fishCount">0</b></div>
+  <div class="stat">🍅 Tomato: <b id="plantStage0">0</b>/2</div>
+  <div class="stat">🌻 Sunflower: <b id="plantStage1">0</b>/2</div>
+  <div class="stat">🌵 Cactus: <b id="plantStage2">0</b>/2</div>
+  <div class="stat">💧 Waterings: <b id="waterCount">0</b></div>
+</div>
+<div id="modeIndicator" class="kayak">🛶 Kayak Mode</div>
+<div id="hint">
+  <b>Controls:</b> <kbd>Drag</kbd> orbit · <kbd>Scroll</kbd> zoom ·
+  <kbd>Tab</kbd> switch mode (🛶 Kayak ↔ 💧 Watering Can) ·
+  <kbd>WASD</kbd> move active object · <kbd>E</kbd> water nearest plant ·
+  Click rod to fish · Click fish to collect.
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/* =========================================================
+   WebGL Camping Scene — single file
+   ========================================================= */
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x9fc8e8, 25, 80);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 7, 16);
+camera.lookAt(0,0,0);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 4;
+controls.maxDistance = 50;
+controls.target.set(0,1,0);
+
+const clock = new THREE.Clock();
+
+/* ---------- procedural textures (canvas based) ---------- */
+function makeCanvasTex(w,h,draw){
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  draw(c.getContext('2d'),w,h);
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.anisotropy=8;
+  return t;
+}
+const grassTex = makeCanvasTex(256,256,(g,w,h)=>{
+  g.fillStyle='#4a7c2f';g.fillRect(0,0,w,h);
+  for(let i=0;i<2400;i++){
+    const x=Math.random()*w,y=Math.random()*h;
+    const shade=80+Math.random()*80;
+    g.fillStyle=`rgb(${30+Math.random()*40},${shade+Math.random()*40},${30+Math.random()*30})`;
+    g.fillRect(x,y,1+Math.random()*2,1+Math.random()*3);
+  }
+});
+grassTex.repeat.set(20,20);
+
+const waterTex = makeCanvasTex(256,256,(g,w,h)=>{
+  const grd=g.createLinearGradient(0,0,0,h);
+  grd.addColorStop(0,'#1e5a8a');grd.addColorStop(1,'#3d8fbf');
+  g.fillStyle=grd;g.fillRect(0,0,w,h);
+  g.strokeStyle='rgba(255,255,255,0.25)';g.lineWidth=1;
+  for(let i=0;i<60;i++){
+    g.beginPath();
+    const y=Math.random()*h;
+    g.moveTo(0,y);
+    for(let x=0;x<w;x+=10) g.lineTo(x, y + Math.sin((x+i*17)/15)*2);
+    g.stroke();
+  }
+});
+waterTex.repeat.set(4,2);
+
+const barkTex = makeCanvasTex(128,256,(g,w,h)=>{
+  g.fillStyle='#5a3a22';g.fillRect(0,0,w,h);
+  for(let i=0;i<200;i++){
+    g.strokeStyle=`rgba(${30+Math.random()*40},${20+Math.random()*30},10,.6)`;
+    g.lineWidth=Math.random()*2;
+    g.beginPath();
+    const x=Math.random()*w;
+    g.moveTo(x,0);
+    for(let y=0;y<h;y+=8) g.lineTo(x+Math.sin(y/20)*3,y);
+    g.stroke();
+  }
+});
+
+const canvasTex = makeCanvasTex(128,128,(g,w,h)=>{
+  g.fillStyle='#d96a2c';g.fillRect(0,0,w,h);
+  g.strokeStyle='rgba(0,0,0,.15)';g.lineWidth=1;
+  for(let i=0;i<w;i+=4){g.beginPath();g.moveTo(i,0);g.lineTo(i,h);g.stroke();}
+  for(let i=0;i<h;i+=4){g.beginPath();g.moveTo(0,i);g.lineTo(w,i);g.stroke();}
+});
+
+const woodTex = makeCanvasTex(128,128,(g,w,h)=>{
+  g.fillStyle='#7a4a25';g.fillRect(0,0,w,h);
+  for(let i=0;i<20;i++){
+    g.strokeStyle=`rgba(40,20,5,${.3+Math.random()*.4})`;
+    g.lineWidth=1+Math.random()*2;
+    g.beginPath();
+    g.ellipse(w/2,h/2,10+i*4,12+i*4,0,0,Math.PI*2);
+    g.stroke();
+  }
+});
+
+/* ---------- sky / lights ---------- */
+scene.background = new THREE.Color(0x9fc8e8);
+const hemi = new THREE.HemisphereLight(0x87CEEB, 0x4a7c2f, 0.7);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xfff0d0, 0.6);
+sun.position.set(10,15,8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.left=-20;sun.shadow.camera.right=20;
+sun.shadow.camera.top=20;sun.shadow.camera.bottom=-20;
+scene.add(sun);
+
+/* ---------- ground ---------- */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(80,80),
+  new THREE.MeshStandardMaterial({ map:grassTex, roughness:1 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// soil patches for 3 plants
+const soilPositions = [
+  new THREE.Vector3(3.5, 0.01, 1),
+  new THREE.Vector3(5.0, 0.01, 1.2),
+  new THREE.Vector3(4.2, 0.01, 2.8)
+];
+soilPositions.forEach(pos => {
+  const soil = new THREE.Mesh(
+    new THREE.CircleGeometry(0.9, 24),
+    new THREE.MeshStandardMaterial({ color:0x3a2414, roughness:1 })
+  );
+  soil.rotation.x = -Math.PI/2;
+  soil.position.copy(pos);
+  scene.add(soil);
+});
+
+/* ---------- river ---------- */
+const waterY = 0.05;
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(80, 10, 32, 8),
+  new THREE.MeshStandardMaterial({ map:waterTex, transparent:true, opacity:.9, roughness:.3, metalness:.2 })
+);
+water.rotation.x = -Math.PI/2;
+water.position.set(0, waterY, 10);
+scene.add(water);
+
+// river bank stones (more realistic, varied shapes)
+for(let i=0;i<22;i++){
+  const r = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.15+Math.random()*0.35, 0),
+    new THREE.MeshStandardMaterial({ color:new THREE.Color().setHSL(0.08,0.05,0.35+Math.random()*0.25), roughness:1, flatShading:true })
+  );
+  r.scale.y = 0.35+Math.random()*0.35;
+  r.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+  r.position.set(-12+Math.random()*24, 0.08, 4.5+Math.random()*1.4);
+  r.castShadow = true;
+  scene.add(r);
+}
+// opposite bank stones
+for(let i=0;i<14;i++){
+  const r = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.12+Math.random()*0.25, 0),
+    new THREE.MeshStandardMaterial({ color:new THREE.Color().setHSL(0.06,0.06,0.3+Math.random()*0.3), roughness:1, flatShading:true })
+  );
+  r.scale.y = 0.3+Math.random()*0.3;
+  r.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+  r.position.set(-10+Math.random()*20, 0.06, 14.5+Math.random()*1.0);
+  r.castShadow = true;
+  scene.add(r);
+}
+
+// scattered ground rocks around campsite
+for(let i=0;i<30;i++){
+  const r = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.06+Math.random()*0.14, 0),
+    new THREE.MeshStandardMaterial({ color:new THREE.Color().setHSL(0.07,0.08,0.3+Math.random()*0.25), roughness:1, flatShading:true })
+  );
+  r.scale.y = 0.3+Math.random()*0.4;
+  r.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+  const angle = Math.random()*Math.PI*2;
+  const dist = 2+Math.random()*14;
+  const px = Math.cos(angle)*dist, pz = Math.sin(angle)*dist;
+  if(Math.abs(pz-10)<6) continue;
+  r.position.set(px, 0.03, pz);
+  scene.add(r);
+}
+
+// background mountains
+const mountainMat = new THREE.MeshStandardMaterial({ color:0x4a5e4a, roughness:1, flatShading:true });
+const snowMat = new THREE.MeshStandardMaterial({ color:0xe0e4ea, roughness:0.7, flatShading:true });
+const mtnData = [
+  {x:-28,z:-32,h:20,r:13},{x:-10,z:-38,h:26,r:16},{x:8,z:-34,h:22,r:14},
+  {x:26,z:-30,h:18,r:12},{x:-18,z:-27,h:15,r:10},{x:18,z:-37,h:21,r:13},
+  {x:0,z:-42,h:28,r:17},{x:-35,z:-36,h:17,r:11},{x:36,z:-34,h:16,r:11},
+  {x:40,z:-30,h:14,r:10},{x:-42,z:-33,h:13,r:9}
+];
+mtnData.forEach(m=>{
+  const mtn = new THREE.Mesh(new THREE.ConeGeometry(m.r,m.h,6+Math.floor(Math.random()*4)), mountainMat);
+  mtn.position.set(m.x, m.h/2-2, m.z);
+  mtn.rotation.y = Math.random()*Math.PI;
+  scene.add(mtn);
+  const snow = new THREE.Mesh(new THREE.ConeGeometry(m.r*0.28, m.h*0.22, 5), snowMat);
+  snow.position.set(m.x, m.h*0.78, m.z);
+  scene.add(snow);
+});
+
+// clouds
+const cloudGroups = [];
+function makeCloud(x,y,z,sc){
+  const cg = new THREE.Group();
+  const cMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:1, transparent:true, opacity:0.82 });
+  const n = 4+Math.floor(Math.random()*4);
+  for(let i=0;i<n;i++){
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.7+Math.random()*0.6, 8, 7), cMat);
+    puff.position.set((i-n/2)*0.85+Math.random()*0.3, Math.random()*0.35, Math.random()*0.4);
+    puff.scale.y = 0.45+Math.random()*0.25;
+    cg.add(puff);
+  }
+  cg.position.set(x,y,z); cg.scale.setScalar(sc);
+  scene.add(cg); cloudGroups.push(cg);
+}
+makeCloud(-18,14,-12,2.0); makeCloud(8,16,-18,2.4);
+makeCloud(24,13,-10,1.6); makeCloud(-6,18,-22,2.2);
+makeCloud(16,15,-7,1.4); makeCloud(-28,15,-14,1.8);
+makeCloud(35,16,-16,1.5); makeCloud(-12,17,-25,1.9);
+
+// wildflowers
+const flowerCols = [0xff6688,0xffdd44,0xffffff,0xdd88ff,0xff8844,0x88ccff];
+for(let i=0;i<80;i++){
+  const angle = Math.random()*Math.PI*2;
+  const dist = 3+Math.random()*16;
+  const px = Math.cos(angle)*dist, pz = Math.sin(angle)*dist;
+  if(Math.abs(pz-10)<6) continue;
+  const fc = flowerCols[Math.floor(Math.random()*flowerCols.length)];
+  const fl = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04+Math.random()*0.04, 6, 5),
+    new THREE.MeshStandardMaterial({ color:fc, emissive:fc, emissiveIntensity:0.15 })
+  );
+  fl.position.set(px, 0.07, pz); scene.add(fl);
+  const st = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.008,0.01,0.07,4),
+    new THREE.MeshStandardMaterial({ color:0x3a6a2a })
+  );
+  st.position.set(px, 0.035, pz); scene.add(st);
+}
+
+/* ---------- forest ---------- */
+const greenShades = [0x2d5a2a, 0x3a6e32, 0x256028, 0x1e4a20, 0x3d7a35, 0x2a6830];
+function makeTree(){
+  const g = new THREE.Group();
+  const trunkH = 2.0+Math.random()*1.4;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14+Math.random()*0.08, 0.28+Math.random()*0.14, trunkH, 10),
+    new THREE.MeshStandardMaterial({ map:barkTex, roughness:1 })
+  );
+  trunk.position.y = trunkH/2; trunk.castShadow=true;
+  g.add(trunk);
+  const canopyY = trunkH+0.2;
+  const numPuffs = 3+Math.floor(Math.random()*3);
+  for(let i=0;i<numPuffs;i++){
+    const radius = 0.7+Math.random()*0.7;
+    const foliage = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(radius, 1),
+      new THREE.MeshStandardMaterial({
+        color:greenShades[Math.floor(Math.random()*greenShades.length)],
+        roughness:0.9, flatShading:true
+      })
+    );
+    foliage.position.set(
+      (Math.random()-0.5)*0.7,
+      canopyY+(Math.random()-0.3)*0.5,
+      (Math.random()-0.5)*0.7
+    );
+    foliage.castShadow=true; foliage.receiveShadow=true;
+    g.add(foliage);
+  }
+  for(let i=0;i<2;i++){
+    const br = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02,0.04,0.7,5),
+      new THREE.MeshStandardMaterial({ color:0x5a3a22, roughness:1 })
+    );
+    const a = Math.random()*Math.PI*2;
+    br.position.set(Math.cos(a)*0.25, trunkH*0.55+i*0.35, Math.sin(a)*0.25);
+    br.rotation.z = (Math.random()-0.5)*1.2;
+    br.rotation.y = a;
+    g.add(br);
+  }
+  return g;
+}
+
+const pineGreens = [0x1a4a1a, 0x205520, 0x184418, 0x1e5a1e, 0x164216];
+function makePineTree(){
+  const g = new THREE.Group();
+  const trunkH = 1.3+Math.random()*0.8;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.18, trunkH, 8),
+    new THREE.MeshStandardMaterial({ map:barkTex, roughness:1 })
+  );
+  trunk.position.y = trunkH/2; trunk.castShadow=true;
+  g.add(trunk);
+  const layers = 3+Math.floor(Math.random()*2);
+  for(let i=0;i<layers;i++){
+    const t = i/layers;
+    const radius = 1.1*(1-t*0.45)+Math.random()*0.2;
+    const coneH = 1.1+Math.random()*0.3;
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(radius, coneH, 8),
+      new THREE.MeshStandardMaterial({
+        color:pineGreens[Math.floor(Math.random()*pineGreens.length)],
+        roughness:1, flatShading:true
+      })
+    );
+    cone.position.y = trunkH+i*0.65+0.3;
+    cone.castShadow=true; cone.receiveShadow=true;
+    g.add(cone);
+  }
+  return g;
+}
+
+function makeBush(){
+  const g = new THREE.Group();
+  const bushGreens = [0x3a6e2a, 0x4a7a35, 0x2d5a22, 0x3e7230];
+  const puffs = 2+Math.floor(Math.random()*3);
+  for(let i=0;i<puffs;i++){
+    const puff = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.25+Math.random()*0.2, 1),
+      new THREE.MeshStandardMaterial({
+        color:bushGreens[Math.floor(Math.random()*bushGreens.length)],
+        roughness:1, flatShading:true
+      })
+    );
+    puff.position.set((Math.random()-0.5)*0.3, 0.18+Math.random()*0.12, (Math.random()-0.5)*0.3);
+    puff.castShadow=true;
+    g.add(puff);
+  }
+  return g;
+}
+
+const campsiteRadius = 6;
+for(let i=0;i<32;i++){
+  const t = makeTree();
+  let x,z,tries=0;
+  do{
+    const angle = Math.random()*Math.PI*2;
+    const dist = 7+Math.random()*18;
+    x = Math.cos(angle)*dist;
+    z = Math.sin(angle)*dist-2;
+    tries++;
+  } while ((Math.abs(z-10)<6) && tries<10);
+  t.position.set(x, 0, z);
+  const s = 0.65+Math.random()*0.7;
+  t.scale.setScalar(s);
+  t.rotation.y = Math.random()*Math.PI*2;
+  scene.add(t);
+}
+for(let i=0;i<22;i++){
+  const t = makePineTree();
+  let x,z,tries=0;
+  do{
+    const angle = Math.random()*Math.PI*2;
+    const dist = 8+Math.random()*17;
+    x = Math.cos(angle)*dist;
+    z = Math.sin(angle)*dist-2;
+    tries++;
+  } while ((Math.abs(z-10)<6) && tries<10);
+  t.position.set(x, 0, z);
+  const s = 0.7+Math.random()*0.8;
+  t.scale.setScalar(s);
+  t.rotation.y = Math.random()*Math.PI*2;
+  scene.add(t);
+}
+for(let i=0;i<24;i++){
+  const b = makeBush();
+  let x,z,tries=0;
+  do{
+    const angle = Math.random()*Math.PI*2;
+    const dist = 3.5+Math.random()*14;
+    x = Math.cos(angle)*dist;
+    z = Math.sin(angle)*dist-1;
+    tries++;
+  } while (((Math.abs(z-10)<6)||(Math.sqrt(x*x+z*z)<3)) && tries<10);
+  b.position.set(x, 0, z);
+  b.rotation.y = Math.random()*Math.PI*2;
+  scene.add(b);
+}
+
+/* ---------- tent (realistic A-frame) ---------- */
+function buildTent(){
+  const g = new THREE.Group();
+  const tentMat = new THREE.MeshStandardMaterial({ map:canvasTex, roughness:.85, side:THREE.DoubleSide });
+  const poleMat = new THREE.MeshStandardMaterial({ color:0x555555, metalness:0.5, roughness:0.3 });
+  const W=1.5, H=1.9, D=2.8;
+  const shape = new THREE.Shape();
+  shape.moveTo(-W, 0);
+  shape.lineTo(W, 0);
+  shape.lineTo(0, H);
+  shape.closePath();
+  const geom = new THREE.ExtrudeGeometry(shape, { depth:D, bevelEnabled:false });
+  geom.translate(0,0,-D/2);
+  const tentBody = new THREE.Mesh(geom, tentMat);
+  tentBody.rotation.y = Math.PI/2;
+  tentBody.castShadow = true;
+  tentBody.receiveShadow = true;
+  g.add(tentBody);
+  const groundSheet = new THREE.Mesh(
+    new THREE.PlaneGeometry(D-0.15, W*2-0.15),
+    new THREE.MeshStandardMaterial({ color:0x6b5b3a, roughness:1, side:THREE.DoubleSide })
+  );
+  groundSheet.rotation.x = -Math.PI/2;
+  groundSheet.position.y = 0.018;
+  g.add(groundSheet);
+  const ridgePole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.03, D+0.5, 6), poleMat
+  );
+  ridgePole.rotation.z = Math.PI/2;
+  ridgePole.position.y = H;
+  g.add(ridgePole);
+  for(const xOff of [-(D/2+0.08), D/2+0.08]){
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, H+0.25, 6), poleMat
+    );
+    pole.position.set(xOff, (H+0.25)/2-0.12, 0);
+    pole.castShadow = true;
+    g.add(pole);
+  }
+  for(const s of [-1,1]){
+    const braceLen = Math.sqrt(W*W+H*H)*0.5;
+    const brace = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025,0.025,braceLen,5), poleMat
+    );
+    const angle = Math.atan2(H,W);
+    brace.rotation.z = s>0 ? (Math.PI/2-angle) : -(Math.PI/2-angle);
+    brace.position.set(D/2+0.08, H*0.38, s*W*0.35);
+    g.add(brace);
+  }
+  const ropeData = [
+    {from:[D/2+0.05, H*0.9, 0], to:[D/2+2.0, 0.04, 0]},
+    {from:[-(D/2+0.05), H*0.9, 0], to:[-(D/2+2.0), 0.04, 0]},
+    {from:[0, H*0.65, W+0.02], to:[0, 0.04, W+1.6]},
+    {from:[0, H*0.65, -(W+0.02)], to:[0, 0.04, -(W+1.6)]},
+    {from:[D/4, H*0.6, W+0.02], to:[D/4, 0.04, W+1.3]},
+    {from:[D/4, H*0.6, -(W+0.02)], to:[D/4, 0.04, -(W+1.3)]},
+  ];
+  ropeData.forEach(rd=>{
+    const pts = [new THREE.Vector3(...rd.from), new THREE.Vector3(...rd.to)];
+    const ropeGeom = new THREE.BufferGeometry().setFromPoints(pts);
+    const rope = new THREE.Line(ropeGeom, new THREE.LineBasicMaterial({ color:0xaa9966 }));
+    g.add(rope);
+    const peg = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.13, 4), poleMat);
+    peg.position.set(rd.to[0], 0.065, rd.to[2]);
+    g.add(peg);
+  });
+  return g;
+}
+const tent = buildTent();
+tent.position.set(-3.5, 0, 0);
+scene.add(tent);
+
+/* ---------- campfire ---------- */
+const campfire = new THREE.Group();
+const fireBase = new THREE.Group();
+// fire ring stones
+for(let i=0;i<10;i++){
+  const stone = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.15, 0),
+    new THREE.MeshStandardMaterial({ color:new THREE.Color().setHSL(0,0,0.3+Math.random()*0.15), roughness:1, flatShading:true })
+  );
+  const a = (i/10)*Math.PI*2;
+  stone.position.set(Math.cos(a)*0.55, 0.08, Math.sin(a)*0.55);
+  stone.scale.y = 0.5;
+  stone.rotation.set(Math.random(), Math.random(), Math.random());
+  fireBase.add(stone);
+}
+for(let i=0;i<3;i++){
+  const log = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12,0.12,1.2,8),
+    new THREE.MeshStandardMaterial({ map:woodTex, roughness:1 })
+  );
+  log.rotation.z = Math.PI/2;
+  log.rotation.y = (i/3)*Math.PI*2;
+  log.position.y = 0.12;
+  log.castShadow=true;
+  fireBase.add(log);
+}
+campfire.add(fireBase);
+
+const flames=[];
+for(let i=0;i<5;i++){
+  const radius = 0.22 - i*0.03;
+  const height = 0.65 - i*0.08;
+  const colors = [0xff2200, 0xff4400, 0xff7700, 0xffaa22, 0xffcc44];
+  const emissives = [0xff1100, 0xff3300, 0xff5500, 0xff8800, 0xffaa22];
+  const f = new THREE.Mesh(
+    new THREE.ConeGeometry(Math.max(radius,0.05), Math.max(height,0.15), 8),
+    new THREE.MeshStandardMaterial({
+      color: colors[i], emissive: emissives[i],
+      emissiveIntensity: 1.0, roughness:.4, transparent:true, opacity: 1 - i*0.1
+    })
+  );
+  f.position.y = 0.3 + i*0.12;
+  campfire.add(f); flames.push(f);
+}
+
+// single fire light — NO pulse, directly controlled by slider
+const fireLight = new THREE.PointLight(0xff6600, 2, 15, 1.6);
+fireLight.position.y = 1.2;
+fireLight.castShadow = true;
+campfire.add(fireLight);
+campfire.position.set(0,0,1);
+scene.add(campfire);
+
+let baseFireIntensity = 2;
+
+/* ---------- fishing rod (improved) ---------- */
+const rodGroup = new THREE.Group();
+// multi-segment rod for realism
+const rodMat1 = new THREE.MeshStandardMaterial({ color:0x3a1f10, roughness:.7 });
+const rodMat2 = new THREE.MeshStandardMaterial({ color:0x5a3020, roughness:.6 });
+const rodLower = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.06,1.5,8), rodMat1);
+rodLower.position.y = 0.75;
+rodGroup.add(rodLower);
+const rodUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.045,1.5,8), rodMat2);
+rodUpper.position.y = 2.25;
+rodGroup.add(rodUpper);
+// rod tip (thin)
+const rodTipMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.01, 0.025, 0.6, 6),
+  new THREE.MeshStandardMaterial({ color:0x7a5030, roughness:.5 })
+);
+rodTipMesh.position.y = 3.0;
+rodGroup.add(rodTipMesh);
+// rod handle grip
+const grip = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.065, 0.06, 0.4, 10),
+  new THREE.MeshStandardMaterial({ color:0x222222, roughness:0.9 })
+);
+grip.position.y = 0.2;
+rodGroup.add(grip);
+// reel
+const reel = new THREE.Mesh(
+  new THREE.TorusGeometry(0.08, 0.025, 8, 12),
+  new THREE.MeshStandardMaterial({ color:0x888888, metalness:0.7, roughness:0.3 })
+);
+reel.position.set(0.08, 0.6, 0);
+reel.rotation.y = Math.PI/2;
+rodGroup.add(reel);
+
+rodGroup.position.set(2.5, 0, 5);
+rodGroup.rotation.z = -0.3;
+scene.add(rodGroup);
+
+// rod tip world position helper — use the tip mesh
+function getRodTip(){
+  const v = new THREE.Vector3(0, 3.3, 0);
+  rodGroup.updateMatrixWorld();
+  return v.applyMatrix4(rodGroup.matrixWorld);
+}
+
+// fishing line (catenary-like with multiple points)
+const linePts = [];
+for(let i=0;i<10;i++) linePts.push(new THREE.Vector3());
+const lineGeom = new THREE.BufferGeometry().setFromPoints(linePts);
+const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color:0xdddddd, transparent:true, opacity:0.7 }));
+scene.add(line);
+
+// bobber (improved with white/red stripes)
+const bobberGroup = new THREE.Group();
+const bobberBottom = new THREE.Mesh(
+  new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI*2, Math.PI/2, Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0xeeeeee, roughness:0.5 })
+);
+bobberGroup.add(bobberBottom);
+const bobberTop = new THREE.Mesh(
+  new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI*2, 0, Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0xff2222, roughness:0.5 })
+);
+bobberGroup.add(bobberTop);
+const bobberStick = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.015, 0.015, 0.2, 6),
+  new THREE.MeshStandardMaterial({ color:0x333333 })
+);
+bobberStick.position.y = 0.15;
+bobberGroup.add(bobberStick);
+bobberGroup.position.set(2.8, waterY + 0.1, 8);
+scene.add(bobberGroup);
+
+// fish (improved with fins and eye)
+const fishGroup = new THREE.Group();
+const fishBody = new THREE.Mesh(
+  new THREE.SphereGeometry(0.3, 16, 12),
+  new THREE.MeshStandardMaterial({ color:0x77aacc, metalness:.5, roughness:.3, emissive:0x0a2233, emissiveIntensity:.3 })
+);
+fishBody.scale.set(1.2, 0.45, 0.35);
+fishGroup.add(fishBody);
+// belly (lighter underside)
+const fishBelly = new THREE.Mesh(
+  new THREE.SphereGeometry(0.28, 14, 10, 0, Math.PI*2, Math.PI/2, Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0xccddee, metalness:.3, roughness:.4 })
+);
+fishBelly.scale.set(1.1, 0.3, 0.33);
+fishBelly.position.y = -0.01;
+fishGroup.add(fishBelly);
+const fishTail = new THREE.Mesh(
+  new THREE.ConeGeometry(0.2, 0.35, 4),
+  new THREE.MeshStandardMaterial({ color:0x5588aa, roughness:0.4 })
+);
+fishTail.rotation.z = Math.PI/2;
+fishTail.scale.set(1, 0.8, 0.25);
+fishTail.position.x = -0.38;
+fishGroup.add(fishTail);
+// dorsal fin
+const dorsalFin = new THREE.Mesh(
+  new THREE.ConeGeometry(0.08, 0.18, 4),
+  new THREE.MeshStandardMaterial({ color:0x5588aa, roughness:0.4 })
+);
+dorsalFin.position.set(0.05, 0.15, 0);
+dorsalFin.rotation.z = 0.2;
+fishGroup.add(dorsalFin);
+// eye
+const fishEye = new THREE.Mesh(
+  new THREE.SphereGeometry(0.03, 8, 6),
+  new THREE.MeshStandardMaterial({ color:0x111111, emissive:0x222222 })
+);
+fishEye.position.set(0.25, 0.04, 0.1);
+fishGroup.add(fishEye);
+const fishEye2 = fishEye.clone();
+fishEye2.position.z = -0.1;
+fishGroup.add(fishEye2);
+fishGroup.visible = false;
+scene.add(fishGroup);
+
+// splash particle pool for fishing
+const splashPool = [];
+function spawnSplash(pos, count){
+  for(let i=0;i<count;i++){
+    const d = new THREE.Mesh(
+      new THREE.SphereGeometry(0.04+Math.random()*0.04, 6, 5),
+      new THREE.MeshStandardMaterial({ color:0x88ccff, transparent:true, opacity:0.9, emissive:0x224466, emissiveIntensity:0.2 })
+    );
+    d.position.copy(pos);
+    d.userData.vel = new THREE.Vector3(
+      (Math.random()-0.5)*1.5,
+      1.0+Math.random()*2.0,
+      (Math.random()-0.5)*1.5
+    );
+    d.userData.life = 1;
+    scene.add(d);
+    splashPool.push(d);
+  }
+}
+
+// ripple rings for water interaction
+const ripplePool = [];
+function spawnRipple(pos){
+  const ripple = new THREE.Mesh(
+    new THREE.RingGeometry(0.05, 0.1, 24),
+    new THREE.MeshStandardMaterial({ color:0xaaddff, transparent:true, opacity:0.6, side:THREE.DoubleSide })
+  );
+  ripple.rotation.x = -Math.PI/2;
+  ripple.position.set(pos.x, waterY+0.02, pos.z);
+  ripple.userData.life = 1;
+  ripple.userData.startScale = 0.5;
+  scene.add(ripple);
+  ripplePool.push(ripple);
+}
+
+let rodState = 'IDLE'; // IDLE | PULLING | CAUGHT | COLLECTING
+let rodAnimT = 0;
+let bobberDipTimer = 0; // random bobber dipping for anticipation
+
+/* ---------- kayak ---------- */
+const kayakGroup = new THREE.Group();
+const kayakMat = new THREE.MeshStandardMaterial({ color:0xcc5522, roughness:0.6, metalness:0.1 });
+const kayakInnerMat = new THREE.MeshStandardMaterial({ color:0xaa4418, roughness:0.7, side:THREE.DoubleSide });
+// hull
+const hullShape = new THREE.Shape();
+hullShape.moveTo(0, 0);
+hullShape.bezierCurveTo(0.6, 0, 0.7, 0.3, 0.5, 0.35);
+hullShape.lineTo(-0.5, 0.35);
+hullShape.bezierCurveTo(-0.7, 0.3, -0.6, 0, 0, 0);
+const hullGeom = new THREE.ExtrudeGeometry(hullShape, { depth:3, bevelEnabled:true, bevelThickness:0.05, bevelSize:0.05, bevelSegments:3 });
+hullGeom.translate(0, -0.1, -1.5);
+const hull = new THREE.Mesh(hullGeom, kayakMat);
+hull.castShadow = true;
+kayakGroup.add(hull);
+// inner hull
+const innerHull = new THREE.Mesh(
+  new THREE.BoxGeometry(0.8, 0.15, 2.4),
+  kayakInnerMat
+);
+innerHull.position.y = 0.18;
+kayakGroup.add(innerHull);
+// seat
+const seat = new THREE.Mesh(
+  new THREE.BoxGeometry(0.5, 0.06, 0.4),
+  new THREE.MeshStandardMaterial({ color:0x333333, roughness:0.8 })
+);
+seat.position.set(0, 0.28, 0);
+kayakGroup.add(seat);
+// paddle
+const paddleGroup = new THREE.Group();
+const paddleShaft = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.02, 0.02, 1.8, 6),
+  new THREE.MeshStandardMaterial({ color:0x8B7355, roughness:0.5 })
+);
+paddleShaft.rotation.z = Math.PI/2;
+paddleGroup.add(paddleShaft);
+const blade1 = new THREE.Mesh(
+  new THREE.BoxGeometry(0.02, 0.15, 0.35),
+  new THREE.MeshStandardMaterial({ color:0xcc5522, roughness:0.5 })
+);
+blade1.position.set(0.9, 0, 0);
+blade1.rotation.x = 0.3;
+paddleGroup.add(blade1);
+const blade2 = blade1.clone();
+blade2.position.x = -0.9;
+blade2.rotation.x = -0.3;
+paddleGroup.add(blade2);
+paddleGroup.position.set(0, 0.45, 0);
+kayakGroup.add(paddleGroup);
+
+kayakGroup.position.set(-3, waterY + 0.08, 9);
+kayakGroup.rotation.y = Math.PI/2;
+scene.add(kayakGroup);
+
+let paddleAnimT = 0;
+let kayakMoving = false;
+
+/* ---------- bucket (with visible interior) ---------- */
+const bucket = new THREE.Group();
+const bMat = new THREE.MeshStandardMaterial({ color:0xb33a2a, metalness:.5, roughness:.4, side:THREE.DoubleSide });
+const bucketBody = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.35,0.7,18,1,true), bMat);
+bucketBody.position.y = 0.35;
+bucket.add(bucketBody);
+const bucketBottom = new THREE.Mesh(
+  new THREE.CircleGeometry(0.35,18),
+  new THREE.MeshStandardMaterial({ color:0x8a2a1a, roughness:0.8, side:THREE.DoubleSide })
+);
+bucketBottom.rotation.x = -Math.PI/2;
+bucketBottom.position.y = 0.005;
+bucket.add(bucketBottom);
+const bucketInner = new THREE.Mesh(
+  new THREE.CircleGeometry(0.34,18),
+  new THREE.MeshStandardMaterial({ color:0x6a1a10, roughness:0.9, side:THREE.DoubleSide })
+);
+bucketInner.rotation.x = -Math.PI/2;
+bucketInner.position.y = 0.012;
+bucket.add(bucketInner);
+const bucketWater = new THREE.Mesh(
+  new THREE.CircleGeometry(0.43,18),
+  new THREE.MeshStandardMaterial({ color:0x2277aa, transparent:true, opacity:0.65, roughness:0.1, metalness:0.3, side:THREE.DoubleSide })
+);
+bucketWater.rotation.x = -Math.PI/2;
+bucketWater.position.y = 0.42;
+bucket.add(bucketWater);
+const bandMat = new THREE.MeshStandardMaterial({ color:0x666666, metalness:0.8, roughness:0.2 });
+for(const yOff of [0.12, 0.55]){
+  const radius = 0.35+(yOff/0.7)*0.15;
+  const band = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.014, 6, 22), bandMat);
+  band.rotation.x = Math.PI/2;
+  band.position.y = yOff;
+  bucket.add(band);
+}
+const handle = new THREE.Mesh(
+  new THREE.TorusGeometry(0.45, 0.022, 8, 24, Math.PI),
+  new THREE.MeshStandardMaterial({ color:0x555555, metalness:.8, roughness:0.2 })
+);
+handle.position.y = 0.72;
+handle.rotation.y = Math.PI/2;
+bucket.add(handle);
+for(const zOff of [-0.45, 0.45]){
+  const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 5), bandMat);
+  rivet.position.set(0, 0.68, zOff);
+  bucket.add(rivet);
+}
+bucket.position.set(-2, 0, 2);
+bucket.castShadow=true;
+scene.add(bucket);
+
+/* ---------- watering can (improved) ---------- */
+const canGroup = new THREE.Group();
+const canMatMain = new THREE.MeshStandardMaterial({ color:0x2a7a3a, metalness:.45, roughness:.45 });
+const canMatDark = new THREE.MeshStandardMaterial({ color:0x1a5a28, metalness:.5, roughness:.4 });
+// main body — tapered cylinder
+const canBodyMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.28, 0.32, 0.55, 16), canMatMain
+);
+canBodyMesh.position.y = 0.275;
+canGroup.add(canBodyMesh);
+// top cap
+const canTop = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.22, 0.28, 0.06, 16), canMatDark
+);
+canTop.position.y = 0.56;
+canGroup.add(canTop);
+// fill opening
+const canOpening = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.1, 0.1, 0.08, 12),
+  new THREE.MeshStandardMaterial({ color:0x111111, roughness:0.9 })
+);
+canOpening.position.y = 0.6;
+canGroup.add(canOpening);
+// spout — longer curved pipe
+const spoutLower = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.055, 0.07, 0.45, 10), canMatMain
+);
+spoutLower.rotation.z = -Math.PI/4;
+spoutLower.position.set(0.3, 0.4, 0);
+canGroup.add(spoutLower);
+const spoutTip = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.04, 0.055, 0.2, 10), canMatDark
+);
+spoutTip.rotation.z = -Math.PI/5;
+spoutTip.position.set(0.48, 0.58, 0);
+canGroup.add(spoutTip);
+// shower head (rose)
+const rose = new THREE.Mesh(
+  new THREE.SphereGeometry(0.06, 8, 6, 0, Math.PI*2, 0, Math.PI/2),
+  new THREE.MeshStandardMaterial({ color:0x1a5a28, metalness:0.6, roughness:0.3 })
+);
+rose.position.set(0.52, 0.65, 0);
+rose.rotation.z = -0.4;
+canGroup.add(rose);
+// handle (arched)
+const canHandleMesh = new THREE.Mesh(
+  new THREE.TorusGeometry(0.22, 0.025, 8, 18, Math.PI),
+  canMatDark
+);
+canHandleMesh.position.set(-0.05, 0.52, 0);
+canHandleMesh.rotation.y = Math.PI/2;
+canHandleMesh.rotation.x = 0.15;
+canGroup.add(canHandleMesh);
+// decorative band
+const canBand = new THREE.Mesh(
+  new THREE.TorusGeometry(0.30, 0.012, 6, 18), canMatDark
+);
+canBand.rotation.x = Math.PI/2;
+canBand.position.y = 0.35;
+canGroup.add(canBand);
+canGroup.position.set(1.5, 0, -1);
+canGroup.traverse(o=>o.castShadow=true);
+scene.add(canGroup);
+
+/* ---------- 3 plant types ---------- */
+const plantData = [
+  { // 0: Tomato plant (original)
+    pos: soilPositions[0],
+    stemColor: 0x3a7a2a, leafColor: 0x4caa3a, fruitColor: 0xe83838,
+    fruitEmissive: 0x441010, fruitCount: 4, topRadius: 0.25,
+    stage: 0, waterings: 0, currentScale: 0.2, targetScale: 0.2,
+    waterThreshold1: 3, waterThreshold2: 6
+  },
+  { // 1: Sunflower
+    pos: soilPositions[1],
+    stemColor: 0x4a8a2a, leafColor: 0x5ab83a, fruitColor: 0xffcc22,
+    fruitEmissive: 0x886600, fruitCount: 1, topRadius: 0.35,
+    stage: 0, waterings: 0, currentScale: 0.15, targetScale: 0.15,
+    waterThreshold1: 4, waterThreshold2: 8
+  },
+  { // 2: Cactus
+    pos: soilPositions[2],
+    stemColor: 0x2a6a3a, leafColor: 0x3a8a4a, fruitColor: 0xff66aa,
+    fruitEmissive: 0x662244, fruitCount: 3, topRadius: 0.18,
+    stage: 0, waterings: 0, currentScale: 0.2, targetScale: 0.2,
+    waterThreshold1: 3, waterThreshold2: 7
+  }
+];
+
+const plantGroups = [];
+const allPlantParts = []; // {group, leafA, leafB, fruits, data, stemMesh, topMesh}
+
+plantData.forEach((pd, idx) => {
+  const pg = new THREE.Group();
+  pg.position.set(pd.pos.x, 0, pd.pos.z);
+  scene.add(pg);
+  plantGroups.push(pg);
+
+  const stemMat = new THREE.MeshStandardMaterial({ color:pd.stemColor });
+  const leafMat = new THREE.MeshStandardMaterial({ color:pd.leafColor, side:THREE.DoubleSide });
+  const fruitMat = new THREE.MeshStandardMaterial({ color:pd.fruitColor, emissive:pd.fruitEmissive, roughness:.4 });
+
+  let stemGeom, stemMesh, topMesh;
+
+  if(idx === 0){
+    // Tomato — standard plant
+    stemMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.8,8), stemMat);
+    stemMesh.position.y = 0.4;
+    pg.add(stemMesh);
+    topMesh = new THREE.Mesh(new THREE.SphereGeometry(pd.topRadius,12,10), leafMat);
+    topMesh.position.y = 0.85;
+    pg.add(topMesh);
+  } else if(idx === 1){
+    // Sunflower — tall stem with big flower head
+    stemMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,1.4,8), stemMat);
+    stemMesh.position.y = 0.7;
+    pg.add(stemMesh);
+    topMesh = new THREE.Mesh(new THREE.CylinderGeometry(pd.topRadius, pd.topRadius*0.8, 0.08, 14), leafMat);
+    topMesh.position.y = 1.45;
+    pg.add(topMesh);
+  } else {
+    // Cactus — cylindrical body with ribs
+    stemMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.18,0.7,8), stemMat);
+    stemMesh.position.y = 0.35;
+    pg.add(stemMesh);
+    // cactus arm 1
+    const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.35,6), stemMat);
+    arm1.position.set(0.18, 0.5, 0);
+    arm1.rotation.z = -0.8;
+    pg.add(arm1);
+    // cactus arm 2
+    const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.3,6), stemMat);
+    arm2.position.set(-0.15, 0.55, 0.05);
+    arm2.rotation.z = 0.7;
+    pg.add(arm2);
+    topMesh = new THREE.Mesh(new THREE.SphereGeometry(pd.topRadius,10,8), leafMat);
+    topMesh.position.y = 0.75;
+    pg.add(topMesh);
+  }
+
+  // leaves (visible at stage>=1)
+  const leafA = new THREE.Mesh(new THREE.ConeGeometry(0.15,0.4,6), leafMat);
+  const leafB = leafA.clone();
+  if(idx === 1){
+    // sunflower leaves are bigger and lower
+    leafA.scale.set(1.3, 1.2, 1);
+    leafB.scale.set(1.3, 1.2, 1);
+    leafA.position.set(0.3, 0.45, 0); leafA.rotation.z = -Math.PI/3.5;
+    leafB.position.set(-0.3, 0.45, 0); leafB.rotation.z = Math.PI/3.5;
+  } else if(idx === 2){
+    // cactus "spines" as leaves
+    leafA.scale.set(0.5, 0.6, 0.5);
+    leafB.scale.set(0.5, 0.6, 0.5);
+    leafA.position.set(0.2, 0.3, 0.1); leafA.rotation.z = -Math.PI/4;
+    leafB.position.set(-0.15, 0.35, -0.08); leafB.rotation.z = Math.PI/4;
+  } else {
+    leafA.position.set(0.25,0.55,0); leafA.rotation.z = -Math.PI/3;
+    leafB.position.set(-0.25,0.55,0); leafB.rotation.z = Math.PI/3;
+  }
+  pg.add(leafA, leafB);
+
+  // fruits (visible at stage 2)
+  const fruits = [];
+  for(let i=0;i<pd.fruitCount;i++){
+    let fr;
+    if(idx === 1){
+      // sunflower center disk
+      fr = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.06, 12), fruitMat);
+      fr.position.y = 1.46;
+    } else {
+      fr = new THREE.Mesh(new THREE.SphereGeometry(idx===2?0.06:0.1, 10, 8), fruitMat);
+      const a = (i/pd.fruitCount)*Math.PI*2;
+      if(idx === 2){
+        fr.position.set(Math.cos(a)*0.2, 0.55+i*0.12, Math.sin(a)*0.15);
+      } else {
+        fr.position.set(Math.cos(a)*0.22, 0.85, Math.sin(a)*0.22);
+      }
+    }
+    pg.add(fr);
+    fruits.push(fr);
+  }
+
+  pg.scale.setScalar(pd.currentScale);
+
+  const parts = { group:pg, leafA, leafB, fruits, data:pd, stemMesh, topMesh };
+  allPlantParts.push(parts);
+
+  // set initial visibility
+  leafA.visible = leafB.visible = false;
+  fruits.forEach(f => f.visible = false);
+});
+
+let totalWaterings = 0;
+
+function updatePlantVisibility(idx){
+  const p = allPlantParts[idx];
+  const d = p.data;
+  p.leafA.visible = p.leafB.visible = d.stage >= 1;
+  p.fruits.forEach(f => f.visible = d.stage >= 2);
+  document.getElementById('plantStage'+idx).textContent = d.stage;
+}
+allPlantParts.forEach((_,i)=>updatePlantVisibility(i));
+
+/* ---------- water particles (improved spray) ---------- */
+const dropPool = [];
+function spawnDrops(origin, count, spread, downward){
+  const cnt = count || 20;
+  const sp = spread || 0.6;
+  for(let i=0;i<cnt;i++){
+    const d = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03+Math.random()*0.03, 6, 5),
+      new THREE.MeshStandardMaterial({ color:0x66bbff, transparent:true, opacity:.85, emissive:0x224488, emissiveIntensity:0.15 })
+    );
+    d.position.copy(origin);
+    const vx = (Math.random()-0.5)*sp;
+    const vy = downward ? (-0.2-Math.random()*0.5) : (0.3+Math.random()*0.3);
+    const vz = (Math.random()-0.5)*sp;
+    d.userData.vel = new THREE.Vector3(vx, vy, vz);
+    d.userData.life = 0.8 + Math.random()*0.4;
+    d.userData.maxLife = d.userData.life;
+    scene.add(d);
+    dropPool.push(d);
+  }
+}
+
+/* ---------- raycaster ---------- */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', e=>{
+  mouse.x = (e.clientX/innerWidth)*2-1;
+  mouse.y = -(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  const targets = [rodLower, rodUpper, rodTipMesh, grip];
+  if(fishGroup.visible) targets.push(fishBody, fishTail, fishBelly, dorsalFin);
+  // include bobber parts
+  bobberGroup.traverse(c => { if(c.isMesh) targets.push(c); });
+  const hits = raycaster.intersectObjects(targets, true);
+  if(!hits.length) return;
+  const hit = hits[0].object;
+  const isRod = (hit===rodLower || hit===rodUpper || hit===rodTipMesh || hit===grip ||
+                 hit===bobberBottom || hit===bobberTop || hit===bobberStick);
+  const isFish = (hit===fishBody || hit===fishTail || hit===fishBelly || hit===dorsalFin);
+  if(rodState==='IDLE' && isRod){
+    rodState='PULLING'; rodAnimT=0;
+    // splash when bobber dips
+    spawnSplash(bobberGroup.position.clone(), 12);
+    spawnRipple(bobberGroup.position);
+  } else if(rodState==='CAUGHT' && isFish){
+    rodState='COLLECTING'; rodAnimT=0;
+    fishStart = fishGroup.position.clone();
+    fishEnd = bucket.position.clone().add(new THREE.Vector3(0,0.6,0));
+    // splash when fish leaves water
+    spawnSplash(fishGroup.position.clone(), 18);
+    spawnRipple(fishGroup.position);
+  }
+});
+
+let fishStart=new THREE.Vector3(), fishEnd=new THREE.Vector3();
+let fishCount=0;
+
+/* ---------- keyboard ---------- */
+const keys = {};
+let controlMode = 'KAYAK'; // 'KAYAK' or 'CAN'
+
+addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if(e.key === 'Tab'){
+    e.preventDefault();
+    controlMode = controlMode === 'KAYAK' ? 'CAN' : 'KAYAK';
+    const ind = document.getElementById('modeIndicator');
+    if(controlMode === 'KAYAK'){
+      ind.textContent = '🛶 Kayak Mode';
+      ind.className = 'kayak';
+    } else {
+      ind.textContent = '💧 Watering Can Mode';
+      ind.className = 'can';
+    }
+  }
+});
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+let canTilt = 0;
+let canTiltTarget = 0;
+
+function tryWater(){
+  // find nearest plant within range
+  let nearestIdx = -1;
+  let nearestDist = Infinity;
+  allPlantParts.forEach((p, i) => {
+    const d = canGroup.position.distanceTo(p.group.position);
+    if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
+  });
+
+  if(nearestIdx >= 0 && nearestDist < 1.5 && allPlantParts[nearestIdx].data.stage < 2){
+    canTiltTarget = -0.65;
+    setTimeout(()=>canTiltTarget=0, 700);
+
+    // spawn spray from rose head
+    const spoutWorld = new THREE.Vector3(0.55, 0.6, 0).applyMatrix4(canGroup.matrixWorld);
+    spawnDrops(spoutWorld, 24, 0.4, true);
+
+    const pd = allPlantParts[nearestIdx].data;
+    pd.waterings++;
+    totalWaterings++;
+    document.getElementById('waterCount').textContent = totalWaterings;
+
+    if(pd.waterings >= pd.waterThreshold1 && pd.stage < 1){
+      pd.stage = 1; pd.targetScale = 0.6;
+      updatePlantVisibility(nearestIdx);
+    }
+    if(pd.waterings >= pd.waterThreshold2 && pd.stage < 2){
+      pd.stage = 2; pd.targetScale = 1.0;
+      updatePlantVisibility(nearestIdx);
+    }
+    updatePlantVisibility(nearestIdx);
+  }
+}
+addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='e') tryWater(); });
+
+/* ---------- UI ---------- */
+const fireSlider = document.getElementById('fireSlider');
+fireSlider.addEventListener('input', ()=>{
+  baseFireIntensity = parseFloat(fireSlider.value);
+  document.getElementById('fireVal').textContent = baseFireIntensity.toFixed(1);
+});
+const sunSlider = document.getElementById('sunSlider');
+sunSlider.addEventListener('input', ()=>{
+  const a = parseFloat(sunSlider.value)*Math.PI/180;
+  sun.position.set(Math.cos(a)*15, Math.sin(a)*15+2, 8);
+  document.getElementById('sunVal').textContent = sunSlider.value+'°';
+});
+const fireX = document.getElementById('fireX');
+const fireZ = document.getElementById('fireZ');
+function updateFirePos(){
+  campfire.position.x = parseFloat(fireX.value);
+  campfire.position.z = 1 + parseFloat(fireZ.value);
+  document.getElementById('fxVal').textContent = fireX.value;
+  document.getElementById('fzVal').textContent = fireZ.value;
+}
+fireX.addEventListener('input', updateFirePos);
+fireZ.addEventListener('input', updateFirePos);
+
+/* ---------- resize ---------- */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------- animate ---------- */
+function applyMovement(dt){
+  if(controlMode === 'KAYAK'){
+    // kayak movement
+    const speed = 5;
+    kayakMoving = false;
+    if(keys['w']){ kayakGroup.position.z -= speed*dt*Math.cos(kayakGroup.rotation.y); kayakGroup.position.x += speed*dt*Math.sin(kayakGroup.rotation.y); kayakMoving=true; }
+    if(keys['s']){ kayakGroup.position.z += speed*dt*Math.cos(kayakGroup.rotation.y); kayakGroup.position.x -= speed*dt*Math.sin(kayakGroup.rotation.y); kayakMoving=true; }
+    if(keys['a']){ kayakGroup.rotation.y += 1.8*dt; kayakMoving=true; }
+    if(keys['d']){ kayakGroup.rotation.y -= 1.8*dt; kayakMoving=true; }
+    // keep kayak on water
+    kayakGroup.position.y = waterY + 0.08 + Math.sin(clock.elapsedTime*1.5)*0.03;
+    // gentle rock
+    kayakGroup.rotation.x = Math.sin(clock.elapsedTime*2)*0.03;
+    kayakGroup.rotation.z = Math.sin(clock.elapsedTime*1.7+1)*0.02;
+    // paddle animation
+    if(kayakMoving){
+      paddleAnimT += dt*4;
+      paddleGroup.rotation.z = Math.sin(paddleAnimT)*0.6;
+      paddleGroup.position.x = Math.sin(paddleAnimT)*0.15;
+    }
+  } else {
+    // watering can movement
+    const speed = 4;
+    if(keys['w']) canGroup.position.z -= speed*dt;
+    if(keys['s']) canGroup.position.z += speed*dt;
+    if(keys['a']) canGroup.position.x -= speed*dt;
+    if(keys['d']) canGroup.position.x += speed*dt;
+    canTilt += (canTiltTarget - canTilt)*0.15;
+    canGroup.rotation.z = canTilt;
+    // kayak still bobs even when not controlled
+    kayakGroup.position.y = waterY + 0.08 + Math.sin(clock.elapsedTime*1.5)*0.03;
+    kayakGroup.rotation.x = Math.sin(clock.elapsedTime*2)*0.03;
+    kayakGroup.rotation.z = Math.sin(clock.elapsedTime*1.7+1)*0.02;
+  }
+}
+
+function updateDrops(dt){
+  for(let i=dropPool.length-1;i>=0;i--){
+    const d=dropPool[i];
+    d.userData.vel.y -= 2.5*dt;
+    d.position.addScaledVector(d.userData.vel, dt*2.5);
+    d.userData.life -= dt*1.5;
+    const lifeRatio = Math.max(0, d.userData.life / d.userData.maxLife);
+    d.material.opacity = lifeRatio * 0.85;
+    d.scale.setScalar(0.5 + lifeRatio*0.5);
+    if(d.userData.life<=0 || d.position.y<0){
+      scene.remove(d);
+      dropPool.splice(i,1);
+    }
+  }
+}
+
+function updateSplashes(dt){
+  for(let i=splashPool.length-1;i>=0;i--){
+    const d=splashPool[i];
+    d.userData.vel.y -= 5.0*dt;
+    d.position.addScaledVector(d.userData.vel, dt);
+    d.userData.life -= dt*1.8;
+    d.material.opacity = Math.max(0, d.userData.life)*0.9;
+    d.scale.setScalar(0.3 + d.userData.life*0.7);
+    if(d.userData.life<=0 || d.position.y < waterY-0.5){
+      scene.remove(d);
+      splashPool.splice(i,1);
+    }
+  }
+  // ripples
+  for(let i=ripplePool.length-1;i>=0;i--){
+    const r=ripplePool[i];
+    r.userData.life -= dt*0.8;
+    const age = 1 - r.userData.life;
+    const sc = r.userData.startScale + age*4;
+    r.scale.setScalar(sc);
+    r.material.opacity = Math.max(0, r.userData.life)*0.5;
+    if(r.userData.life<=0){
+      scene.remove(r);
+      ripplePool.splice(i,1);
+    }
+  }
+}
+
+function updateRod(dt){
+  const tip = getRodTip();
+  let lineEnd;
+  if(rodState==='IDLE'){
+    rodGroup.rotation.z += (-0.3 - rodGroup.rotation.z)*0.1;
+    // random bobber dipping for anticipation
+    bobberDipTimer -= dt;
+    if(bobberDipTimer <= 0){ bobberDipTimer = 2 + Math.random()*5; }
+    const dipAmount = bobberDipTimer < 0.3 ? Math.sin(bobberDipTimer*20)*0.06 : 0;
+    bobberGroup.position.y = waterY + 0.1 + Math.sin(clock.elapsedTime*2)*0.04 + dipAmount;
+    lineEnd = bobberGroup.position;
+  } else if(rodState==='PULLING'){
+    rodAnimT += dt;
+    // rod bends more dramatically
+    const bendProgress = Math.min(rodAnimT*1.8, 1);
+    rodGroup.rotation.z = -0.3 + bendProgress * 1.3;
+    // rod vibration during pull
+    if(rodAnimT < 0.8){
+      rodGroup.rotation.x = Math.sin(rodAnimT*25)*0.04*(1-rodAnimT);
+    }
+    bobberGroup.position.y = waterY + 0.1 + rodAnimT*2.5;
+    if(rodAnimT > 0.9){
+      rodState='CAUGHT';
+      fishGroup.visible = true;
+      fishGroup.position.copy(bobberGroup.position).add(new THREE.Vector3(0,-0.15,0));
+      // big splash when fish emerges
+      spawnSplash(bobberGroup.position.clone(), 25);
+      spawnRipple(bobberGroup.position);
+    }
+    lineEnd = bobberGroup.position;
+  } else if(rodState==='CAUGHT'){
+    fishGroup.position.copy(bobberGroup.position).add(new THREE.Vector3(0,-0.2,0));
+    // fish wriggles more
+    fishGroup.rotation.y = Math.sin(clock.elapsedTime*6)*0.6;
+    fishGroup.rotation.z = Math.sin(clock.elapsedTime*8)*0.15;
+    fishGroup.position.y += Math.sin(clock.elapsedTime*5)*0.03;
+    lineEnd = fishGroup.position;
+  } else if(rodState==='COLLECTING'){
+    rodAnimT += dt;
+    const t = Math.min(rodAnimT/1.2, 1);
+    // smooth arc with easing
+    const eased = t < 0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+    const p = new THREE.Vector3().lerpVectors(fishStart, fishEnd, eased);
+    p.y += Math.sin(t*Math.PI)*2.5;
+    fishGroup.position.copy(p);
+    fishGroup.rotation.z = t*Math.PI*3;
+    fishGroup.rotation.y = t*Math.PI*2;
+    // dripping water along arc
+    if(Math.random() < 0.3){
+      spawnSplash(fishGroup.position.clone(), 2);
+    }
+    if(t>=1){
+      fishGroup.visible=false;
+      rodState='IDLE'; rodAnimT=0;
+      bobberGroup.position.set(2.8, waterY+0.1, 8);
+      fishCount++;
+      document.getElementById('fishCount').textContent = fishCount;
+      // splash into bucket
+      spawnSplash(bucket.position.clone().add(new THREE.Vector3(0,0.8,0)), 8);
+    }
+    lineEnd = fishGroup.position;
+  }
+  // draw fishing line with sag (catenary approximation)
+  const sagAmount = rodState==='PULLING' ? 0.1 : 0.4;
+  for(let i=0;i<linePts.length;i++){
+    const t = i/(linePts.length-1);
+    linePts[i].lerpVectors(tip, lineEnd, t);
+    // add sag
+    const sagT = Math.sin(t*Math.PI);
+    linePts[i].y -= sagT * sagAmount * (1-t*0.3);
+  }
+  line.geometry.setFromPoints(linePts);
+  line.geometry.attributes.position.needsUpdate = true;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  waterTex.offset.x += 0.0008;
+
+  // animate clouds
+  cloudGroups.forEach((c,i)=>{
+    c.position.x += 0.004*(0.4+i*0.12);
+    if(c.position.x > 48) c.position.x = -48;
+  });
+
+  // flame animation (visual wobble only, NOT light pulse)
+  flames.forEach((c,i)=>{
+    c.scale.y = 1 + Math.sin(t*7+i*1.3)*0.2;
+    c.scale.x = 1 + Math.sin(t*5+i*0.9)*0.12;
+    c.position.x = Math.sin(t*4+i*2)*0.03;
+    c.position.z = Math.cos(t*3+i*1.5)*0.03;
+  });
+  // fire light intensity — directly from slider, NO pulse
+  fireLight.intensity = baseFireIntensity;
+
+  applyMovement(dt);
+  updateDrops(dt);
+  updateSplashes(dt);
+  updateRod(dt);
+
+  // plant scale lerp for all 3 plants
+  allPlantParts.forEach(p => {
+    p.data.currentScale += (p.data.targetScale - p.data.currentScale)*0.05;
+    p.group.scale.setScalar(p.data.currentScale);
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

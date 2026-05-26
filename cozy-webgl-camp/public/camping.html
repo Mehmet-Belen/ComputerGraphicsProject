@@ -45,6 +45,7 @@
   <input id="fireSlider" type="range" min="0" max="5" step="0.1" value="2" />
   <label>☀️ Sun Angle: <span id="sunVal">45°</span></label>
   <input id="sunSlider" type="range" min="0" max="180" step="1" value="45" />
+  <label><input type="checkbox" id="nightModeToggle" /> 🌙 Night Mode</label>
   <label>🔥 Kamp ateşini sürükle: mouse ile tıkla ve taşı</label>
   <hr>
   <div class="stat">🐟 Fish Caught: <b id="fishCount">0</b></div>
@@ -520,6 +521,17 @@ function buildTent(){
 const tent = buildTent();
 tent.position.set(-3.5, 0, 0);
 scene.add(tent);
+
+// Flat rock for fish display
+const fishRock = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.0, 1.1, 0.1, 8),
+  new THREE.MeshStandardMaterial({ color:0x555555, roughness:0.9, flatShading:true })
+);
+fishRock.position.set(-1.2, 0.05, 1.5);
+fishRock.scale.z = 0.7; // Make it oval
+fishRock.receiveShadow = true;
+fishRock.castShadow = true;
+scene.add(fishRock);
 
 /* ---------- campfire ---------- */
 const campfire = new THREE.Group();
@@ -1152,7 +1164,7 @@ function updateKayakFishVisuals(){
   }
 }
 
-// Visual fish at camp (near campfire)
+// Visual fish at camp (on the fish rock)
 const campFishVisuals = [];
 function updateCampFishVisuals(){
   campFishVisuals.forEach(f => scene.remove(f));
@@ -1163,13 +1175,16 @@ function updateCampFishVisuals(){
       new THREE.MeshStandardMaterial({ color:0x77aacc, metalness:0.4, roughness:0.4 })
     );
     fm.scale.set(1.2, 0.45, 0.35);
-    const angle = (i/Math.max(campFishCount,1))*Math.PI*1.5 - Math.PI/4;
+    
+    // Position on the fish rock (spiral arrangement)
+    const angle = i * 2.4; 
+    const r = Math.sqrt(i) * 0.2; 
     fm.position.set(
-      campfire.position.x + Math.cos(angle)*1.5,
-      0.08,
-      campfire.position.z + Math.sin(angle)*1.5
+      fishRock.position.x + Math.cos(angle)*r,
+      fishRock.position.y + 0.05 + (i * 0.015), // Stack slightly to prevent clipping
+      fishRock.position.z + Math.sin(angle)*r*0.7
     );
-    fm.rotation.y = angle + Math.PI/2;
+    fm.rotation.y = Math.random() * Math.PI;
     scene.add(fm);
     campFishVisuals.push(fm);
   }
@@ -1619,6 +1634,15 @@ sunSlider.addEventListener('input', ()=>{
   document.getElementById('sunVal').textContent = sunSlider.value+'°';
 });
 
+let isNightMode = false;
+document.getElementById('nightModeToggle').addEventListener('change', (e) => {
+  isNightMode = e.target.checked;
+});
+
+let envNightProgress = 0;
+const daySky = new THREE.Color(0x9fc8e8);
+const nightSky = new THREE.Color(0x060b14);
+
 /* ---------- resize ---------- */
 addEventListener('resize', ()=>{
   camera.aspect = innerWidth/innerHeight;
@@ -1894,6 +1918,14 @@ function animate(){
   });
   // fire light intensity — directly from slider, NO pulse
   fireLight.intensity = baseFireIntensity;
+
+  // Night mode interpolation
+  envNightProgress += ((isNightMode ? 1 : 0) - envNightProgress) * dt * 2.0;
+  scene.background.lerpColors(daySky, nightSky, envNightProgress);
+  scene.fog.color.lerpColors(daySky, nightSky, envNightProgress);
+  hemi.intensity = 0.7 - envNightProgress * 0.55; // 0.7 down to 0.15
+  sun.intensity = 0.6 - envNightProgress * 0.6; // 0.6 down to 0
+  hutLanternLight.intensity = 0.6 + envNightProgress * 0.9; // 0.6 up to 1.5
 
   applyMovement(dt);
   updateDrops(dt);

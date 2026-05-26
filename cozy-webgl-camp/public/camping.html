@@ -48,6 +48,9 @@
   <label>🔥 Kamp ateşini sürükle: mouse ile tıkla ve taşı</label>
   <hr>
   <div class="stat">🐟 Fish Caught: <b id="fishCount">0</b></div>
+  <div class="stat">🪣 In Bucket: <b id="bucketFish">0</b></div>
+  <div class="stat">🛶 On Kayak: <b id="kayakFish">0</b></div>
+  <div class="stat">🏕️ At Camp: <b id="campFish">0</b></div>
   <div class="stat">🍅 Tomato: <b id="plantStage0">0</b>/2</div>
   <div class="stat">🌻 Sunflower: <b id="plantStage1">0</b>/2</div>
   <div class="stat">🌵 Cactus: <b id="plantStage2">0</b>/2</div>
@@ -58,6 +61,7 @@
   <b>Controls:</b> <kbd>Drag</kbd> orbit · <kbd>Scroll</kbd> zoom ·
   <kbd>Tab</kbd> switch mode (🛶 Kayak ↔ 💧 Watering Can) ·
   <kbd>WASD</kbd> move active object · <kbd>E</kbd> water nearest plant ·
+  <kbd>F</kbd> load/unload fish (kayak mode) ·
   Click rod to fish · Click fish to collect · 🔥 Click & drag campfire to move.
 </div>
 
@@ -606,8 +610,9 @@ reel.position.set(0.08, 0.6, 0);
 reel.rotation.y = Math.PI/2;
 rodGroup.add(reel);
 
-rodGroup.position.set(2.5, 0, 5);
+rodGroup.position.set(18.5, 0.35, 5.8);
 rodGroup.rotation.z = -0.3;
+rodGroup.rotation.y = -0.3;
 scene.add(rodGroup);
 
 // rod tip world position helper — use the tip mesh
@@ -642,7 +647,7 @@ const bobberStick = new THREE.Mesh(
 );
 bobberStick.position.y = 0.15;
 bobberGroup.add(bobberStick);
-bobberGroup.position.set(2.8, waterY + 0.1, 8);
+bobberGroup.position.set(19.5, waterY + 0.1, 7.5);
 scene.add(bobberGroup);
 
 // fish (improved with fins and eye)
@@ -834,9 +839,352 @@ for(const zOff of [-0.45, 0.45]){
   rivet.position.set(0, 0.68, zOff);
   bucket.add(rivet);
 }
-bucket.position.set(-2, 0, 2);
+bucket.position.set(17.2, 0.35, 5.5);
 bucket.castShadow=true;
 scene.add(bucket);
+
+/* ---------- fishing hut & dock ---------- */
+const hutGroup = new THREE.Group();
+const hutWoodMat = new THREE.MeshStandardMaterial({ map:woodTex, roughness:0.9 });
+const hutLogMat = new THREE.MeshStandardMaterial({ map:barkTex, roughness:1 });
+const hutRoofMat = new THREE.MeshStandardMaterial({ color:0x4a3a28, roughness:0.95, flatShading:true });
+
+// Main cabin dimensions
+const hutW = 3.0, hutH = 2.2, hutD = 2.8;
+const wallThick = 0.15;
+
+// Back wall
+const wallBack = new THREE.Mesh(
+  new THREE.BoxGeometry(hutW+wallThick, hutH, wallThick), hutLogMat
+);
+wallBack.position.set(0, hutH/2, -hutD/2);
+wallBack.castShadow = true; wallBack.receiveShadow = true;
+hutGroup.add(wallBack);
+
+// Left wall
+const wallLeft = new THREE.Mesh(
+  new THREE.BoxGeometry(wallThick, hutH, hutD+wallThick), hutLogMat
+);
+wallLeft.position.set(-hutW/2, hutH/2, 0);
+wallLeft.castShadow = true;
+hutGroup.add(wallLeft);
+
+// Right wall
+const wallRight = new THREE.Mesh(
+  new THREE.BoxGeometry(wallThick, hutH, hutD+wallThick), hutLogMat
+);
+wallRight.position.set(hutW/2, hutH/2, 0);
+wallRight.castShadow = true;
+hutGroup.add(wallRight);
+
+// Front wall — door opening is 1.1 wide, 1.7 tall, centered
+const doorW = 1.1, doorH = 1.7;
+const frontSideW = (hutW - doorW) / 2;
+// Left part of front wall
+const wallFrontLeft = new THREE.Mesh(
+  new THREE.BoxGeometry(frontSideW, hutH, wallThick), hutLogMat
+);
+wallFrontLeft.position.set(-hutW/2 + frontSideW/2, hutH/2, hutD/2);
+hutGroup.add(wallFrontLeft);
+// Right part of front wall
+const wallFrontRight = new THREE.Mesh(
+  new THREE.BoxGeometry(frontSideW, hutH, wallThick), hutLogMat
+);
+wallFrontRight.position.set(hutW/2 - frontSideW/2, hutH/2, hutD/2);
+hutGroup.add(wallFrontRight);
+// Top part above door
+const wallFrontTop = new THREE.Mesh(
+  new THREE.BoxGeometry(doorW, hutH - doorH, wallThick), hutLogMat
+);
+wallFrontTop.position.set(0, doorH + (hutH - doorH)/2, hutD/2);
+hutGroup.add(wallFrontTop);
+
+// Door (recessed into the opening)
+const door = new THREE.Mesh(
+  new THREE.BoxGeometry(doorW - 0.05, doorH - 0.05, 0.06),
+  new THREE.MeshStandardMaterial({ color:0x5a3a1a, roughness:0.85 })
+);
+door.position.set(0, doorH/2, hutD/2 + 0.02);
+hutGroup.add(door);
+// Door plank lines
+for(let i=-2; i<=2; i++){
+  const line = new THREE.Mesh(
+    new THREE.BoxGeometry(0.02, doorH-0.1, 0.01),
+    new THREE.MeshStandardMaterial({ color:0x3a2510, roughness:0.9 })
+  );
+  line.position.set(i*0.2, doorH/2, hutD/2+0.06);
+  hutGroup.add(line);
+}
+// Door handle
+const doorHandle = new THREE.Mesh(
+  new THREE.SphereGeometry(0.04, 6, 5),
+  new THREE.MeshStandardMaterial({ color:0x888866, metalness:0.7, roughness:0.3 })
+);
+doorHandle.position.set(doorW/2-0.15, doorH*0.5, hutD/2+0.08);
+hutGroup.add(doorHandle);
+
+// Window on left wall
+const windowFrame = new THREE.Mesh(
+  new THREE.BoxGeometry(0.08, 0.6, 0.6),
+  new THREE.MeshStandardMaterial({ color:0x5a4a30, roughness:0.7 })
+);
+windowFrame.position.set(-hutW/2-0.02, hutH*0.55, 0.2);
+hutGroup.add(windowFrame);
+const windowGlass = new THREE.Mesh(
+  new THREE.BoxGeometry(0.04, 0.5, 0.5),
+  new THREE.MeshStandardMaterial({ color:0x88bbdd, transparent:true, opacity:0.4, metalness:0.3, roughness:0.1 })
+);
+windowGlass.position.set(-hutW/2-0.04, hutH*0.55, 0.2);
+hutGroup.add(windowGlass);
+// Window cross bars
+const winBarV = new THREE.Mesh(
+  new THREE.BoxGeometry(0.06, 0.5, 0.025),
+  new THREE.MeshStandardMaterial({ color:0x4a3a20, roughness:0.8 })
+);
+winBarV.position.set(-hutW/2-0.06, hutH*0.55, 0.2);
+hutGroup.add(winBarV);
+const winBarH = new THREE.Mesh(
+  new THREE.BoxGeometry(0.06, 0.025, 0.5),
+  new THREE.MeshStandardMaterial({ color:0x4a3a20, roughness:0.8 })
+);
+winBarH.position.set(-hutW/2-0.06, hutH*0.55, 0.2);
+hutGroup.add(winBarH);
+
+// Floor
+const hutFloor = new THREE.Mesh(
+  new THREE.BoxGeometry(hutW+0.3, 0.1, hutD+0.3), hutWoodMat
+);
+hutFloor.position.y = 0.02;
+hutFloor.receiveShadow = true;
+hutGroup.add(hutFloor);
+
+// Roof — two sloped panels meeting at a ridge
+const roofOverhang = 0.35;
+const roofPeakH = 1.1; // height above wall top
+const halfRoofW = hutW/2 + roofOverhang;
+const roofSlopeLen = Math.sqrt(halfRoofW*halfRoofW + roofPeakH*roofPeakH);
+const roofAngle = Math.atan2(roofPeakH, halfRoofW);
+const roofDepth = hutD + 0.5;
+
+const roofLeft = new THREE.Mesh(
+  new THREE.BoxGeometry(roofSlopeLen, 0.08, roofDepth), hutRoofMat
+);
+roofLeft.position.set(-halfRoofW/2, hutH + roofPeakH/2, 0);
+roofLeft.rotation.z = roofAngle;
+roofLeft.castShadow = true;
+hutGroup.add(roofLeft);
+
+const roofRight = new THREE.Mesh(
+  new THREE.BoxGeometry(roofSlopeLen, 0.08, roofDepth), hutRoofMat
+);
+roofRight.position.set(halfRoofW/2, hutH + roofPeakH/2, 0);
+roofRight.rotation.z = -roofAngle;
+roofRight.castShadow = true;
+hutGroup.add(roofRight);
+
+// Roof ridge beam
+const ridgeBeam = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.06, 0.06, roofDepth+0.2, 6), hutLogMat
+);
+ridgeBeam.rotation.x = Math.PI/2;
+ridgeBeam.position.y = hutH + roofPeakH;
+hutGroup.add(ridgeBeam);
+
+// Gable fill (front and back triangles)
+for(const gz of [-hutD/2-0.01, hutD/2+0.01]){
+  const gableShape = new THREE.Shape();
+  gableShape.moveTo(-hutW/2, hutH);
+  gableShape.lineTo(hutW/2, hutH);
+  gableShape.lineTo(0, hutH+roofPeakH);
+  gableShape.closePath();
+  const gableGeom = new THREE.ShapeGeometry(gableShape);
+  const gable = new THREE.Mesh(gableGeom, hutLogMat);
+  gable.position.z = gz;
+  hutGroup.add(gable);
+}
+
+// Corner log posts (decorative)
+for(const cx of [-hutW/2, hutW/2]){
+  for(const cz of [-hutD/2, hutD/2]){
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.1, hutH+0.05, 8), hutLogMat
+    );
+    post.position.set(cx, hutH/2, cz);
+    post.castShadow = true;
+    hutGroup.add(post);
+  }
+}
+
+// Small lantern by door
+const lantern = new THREE.Group();
+const lanternBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.12, 0.18, 0.12),
+  new THREE.MeshStandardMaterial({ color:0x444444, metalness:0.6, roughness:0.3, transparent:true, opacity:0.7 })
+);
+lanternBody.position.y = 0.09;
+lantern.add(lanternBody);
+const lanternLightMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.04, 8, 6),
+  new THREE.MeshStandardMaterial({ color:0xffaa44, emissive:0xff8822, emissiveIntensity:0.8 })
+);
+lanternLightMesh.position.y = 0.09;
+lantern.add(lanternLightMesh);
+const lanternTop = new THREE.Mesh(
+  new THREE.ConeGeometry(0.08, 0.06, 4),
+  new THREE.MeshStandardMaterial({ color:0x555555, metalness:0.5, roughness:0.3 })
+);
+lanternTop.position.y = 0.21;
+lantern.add(lanternTop);
+lantern.position.set(doorW/2+0.3, hutH*0.8, hutD/2+0.1);
+hutGroup.add(lantern);
+
+// Lantern glow
+const hutLanternLight = new THREE.PointLight(0xff9933, 0.6, 5, 1.8);
+hutLanternLight.position.set(doorW/2+0.3, hutH*0.85, hutD/2+0.2);
+hutGroup.add(hutLanternLight);
+
+// Fish sign — small hanging sign
+const signBoard = new THREE.Mesh(
+  new THREE.BoxGeometry(0.6, 0.35, 0.04),
+  new THREE.MeshStandardMaterial({ color:0x7a5a30, roughness:0.9 })
+);
+signBoard.position.set(-doorW/2-0.3, hutH+0.15, hutD/2+0.1);
+hutGroup.add(signBoard);
+
+hutGroup.position.set(17.5, 0, 3.0);
+hutGroup.rotation.y = Math.PI * 0.1;
+scene.add(hutGroup);
+
+// ---- Dock / Pier ----
+const dockGroup = new THREE.Group();
+const plankMat = new THREE.MeshStandardMaterial({ map:woodTex, roughness:0.85 });
+const pileMat = new THREE.MeshStandardMaterial({ map:barkTex, roughness:1 });
+
+const dockLen = 5.0, dockW = 1.8;
+for(let i=0; i<12; i++){
+  const plank = new THREE.Mesh(
+    new THREE.BoxGeometry(dockW, 0.06, 0.38), plankMat
+  );
+  plank.position.set(0, 0.35, i*0.42 - 0.3);
+  plank.receiveShadow = true;
+  plank.castShadow = true;
+  dockGroup.add(plank);
+}
+
+for(const xOff of [-dockW/2+0.05, dockW/2-0.05]){
+  const rail = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 0.06, dockLen), plankMat
+  );
+  rail.position.set(xOff, 0.38, dockLen/2-0.6);
+  dockGroup.add(rail);
+}
+
+const pilePositions = [
+  [-dockW/2+0.15, 0], [dockW/2-0.15, 0],
+  [-dockW/2+0.15, 1.6], [dockW/2-0.15, 1.6],
+  [-dockW/2+0.15, 3.2], [dockW/2-0.15, 3.2],
+  [-dockW/2+0.15, 4.4], [dockW/2-0.15, 4.4]
+];
+pilePositions.forEach(([px, pz]) => {
+  const pile = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.09, 1.2, 8), pileMat
+  );
+  pile.position.set(px, -0.2, pz);
+  pile.castShadow = true;
+  dockGroup.add(pile);
+});
+
+for(const zPos of [0.8, 2.4, 4.0]){
+  const brace = new THREE.Mesh(
+    new THREE.BoxGeometry(dockW-0.3, 0.05, 0.05), plankMat
+  );
+  brace.position.set(0, 0.15, zPos);
+  dockGroup.add(brace);
+}
+
+const bollard = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.06, 0.08, 0.5, 8), pileMat
+);
+bollard.position.set(0.5, 0.6, dockLen-0.8);
+bollard.castShadow = true;
+dockGroup.add(bollard);
+const bollardTop = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.1, 0.06, 0.06, 8),
+  new THREE.MeshStandardMaterial({ color:0x5a3a1a, roughness:0.8 })
+);
+bollardTop.position.set(0.5, 0.88, dockLen-0.8);
+dockGroup.add(bollardTop);
+
+const ropeCoil = new THREE.Mesh(
+  new THREE.TorusGeometry(0.12, 0.025, 6, 16),
+  new THREE.MeshStandardMaterial({ color:0xaa9966, roughness:0.9 })
+);
+ropeCoil.rotation.x = -Math.PI/2;
+ropeCoil.position.set(-0.5, 0.4, 3.0);
+dockGroup.add(ropeCoil);
+
+dockGroup.position.set(17.5, 0, 4.5);
+dockGroup.rotation.y = Math.PI * 0.05;
+scene.add(dockGroup);
+
+/* ---------- fish transport system ---------- */
+let bucketFishCount = 0;
+let kayakFishCount = 0;
+let campFishCount = 0;
+
+// Visual fish on kayak
+const kayakFishVisuals = [];
+function updateKayakFishVisuals(){
+  // Remove old
+  kayakFishVisuals.forEach(f => kayakGroup.remove(f));
+  kayakFishVisuals.length = 0;
+  // Add new
+  for(let i=0; i<kayakFishCount; i++){
+    const fm = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 6),
+      new THREE.MeshStandardMaterial({ color:0x77aacc, metalness:0.4, roughness:0.4 })
+    );
+    fm.scale.set(1.2, 0.45, 0.35);
+    fm.position.set((i%3-1)*0.35, 0.32, -0.5 - Math.floor(i/3)*0.35);
+    fm.rotation.y = Math.random()*Math.PI;
+    kayakGroup.add(fm);
+    kayakFishVisuals.push(fm);
+  }
+}
+
+// Visual fish at camp (near campfire)
+const campFishVisuals = [];
+function updateCampFishVisuals(){
+  campFishVisuals.forEach(f => scene.remove(f));
+  campFishVisuals.length = 0;
+  for(let i=0; i<campFishCount; i++){
+    const fm = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 6),
+      new THREE.MeshStandardMaterial({ color:0x77aacc, metalness:0.4, roughness:0.4 })
+    );
+    fm.scale.set(1.2, 0.45, 0.35);
+    const angle = (i/Math.max(campFishCount,1))*Math.PI*1.5 - Math.PI/4;
+    fm.position.set(
+      campfire.position.x + Math.cos(angle)*1.5,
+      0.08,
+      campfire.position.z + Math.sin(angle)*1.5
+    );
+    fm.rotation.y = angle + Math.PI/2;
+    scene.add(fm);
+    campFishVisuals.push(fm);
+  }
+}
+
+function updateFishUI(){
+  document.getElementById('bucketFish').textContent = bucketFishCount;
+  document.getElementById('kayakFish').textContent = kayakFishCount;
+  document.getElementById('campFish').textContent = campFishCount;
+}
+
+// Dock bucket world position (approx)
+const dockBucketPos = new THREE.Vector3(17.2, 0.35, 5.5);
+// Camp unload zone — near campfire
+const campZoneRadius = 3.0;
 
 /* ---------- watering can (improved) ---------- */
 const canGroup = new THREE.Group();
@@ -1213,7 +1561,50 @@ function tryWater(){
     updatePlantVisibility(nearestIdx);
   }
 }
-addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='e') tryWater(); });
+function tryFishTransfer(){
+  if(controlMode !== 'KAYAK') return;
+
+  // Check if kayak is near the dock/bucket (loading zone)
+  const kayakPos = kayakGroup.position;
+  const distToDock = kayakPos.distanceTo(dockBucketPos);
+
+  if(distToDock < 4.0 && bucketFishCount > 0){
+    // Load fish from bucket onto kayak
+    const toLoad = bucketFishCount;
+    kayakFishCount += toLoad;
+    bucketFishCount = 0;
+    updateKayakFishVisuals();
+    updateFishUI();
+    // Visual feedback — splash
+    spawnSplash(kayakPos.clone().add(new THREE.Vector3(0,0.5,0)), 10);
+    return;
+  }
+
+  // Check if kayak is near the campsite (unloading zone)
+  // Camp is on the near bank — kayak needs to be near the bank AND near campfire's X position
+  const campPos = campfire.position;
+  // Kayak must be at the near edge of the river (z ≈ riverMinZ)
+  const nearBank = kayakPos.z < riverMinZ + 2.0;
+  const distXToCamp = Math.abs(kayakPos.x - campPos.x);
+
+  if(nearBank && distXToCamp < 6.0 && kayakFishCount > 0){
+    // Unload fish at camp
+    campFishCount += kayakFishCount;
+    kayakFishCount = 0;
+    updateKayakFishVisuals();
+    updateCampFishVisuals();
+    updateFishUI();
+    // Visual feedback — splash
+    spawnSplash(kayakPos.clone().add(new THREE.Vector3(0,0.5,0)), 10);
+    return;
+  }
+}
+
+addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  if(k === 'e') tryWater();
+  if(k === 'f' && controlMode === 'KAYAK') tryFishTransfer();
+});
 
 /* ---------- UI ---------- */
 const fireSlider = document.getElementById('fireSlider');
@@ -1458,9 +1849,11 @@ function updateRod(dt){
     if(t>=1){
       fishGroup.visible=false;
       rodState='IDLE'; rodAnimT=0;
-      bobberGroup.position.set(2.8, waterY+0.1, 8);
+      bobberGroup.position.set(19.5, waterY+0.1, 7.5);
       fishCount++;
+      bucketFishCount++;
       document.getElementById('fishCount').textContent = fishCount;
+      updateFishUI();
       // splash into bucket
       spawnSplash(bucket.position.clone().add(new THREE.Vector3(0,0.8,0)), 8);
     }

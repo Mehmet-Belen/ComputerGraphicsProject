@@ -45,10 +45,7 @@
   <input id="fireSlider" type="range" min="0" max="5" step="0.1" value="2" />
   <label>☀️ Sun Angle: <span id="sunVal">45°</span></label>
   <input id="sunSlider" type="range" min="0" max="180" step="1" value="45" />
-  <label>🔥 Fire X: <span id="fxVal">0</span></label>
-  <input id="fireX" type="range" min="-5" max="5" step="0.1" value="0" />
-  <label>🔥 Fire Z: <span id="fzVal">0</span></label>
-  <input id="fireZ" type="range" min="-3" max="5" step="0.1" value="0" />
+  <label>🔥 Kamp ateşini sürükle: mouse ile tıkla ve taşı</label>
   <hr>
   <div class="stat">🐟 Fish Caught: <b id="fishCount">0</b></div>
   <div class="stat">🍅 Tomato: <b id="plantStage0">0</b>/2</div>
@@ -61,7 +58,7 @@
   <b>Controls:</b> <kbd>Drag</kbd> orbit · <kbd>Scroll</kbd> zoom ·
   <kbd>Tab</kbd> switch mode (🛶 Kayak ↔ 💧 Watering Can) ·
   <kbd>WASD</kbd> move active object · <kbd>E</kbd> water nearest plant ·
-  Click rod to fish · Click fish to collect.
+  Click rod to fish · Click fish to collect · 🔥 Click & drag campfire to move.
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -1070,13 +1067,36 @@ function spawnDrops(origin, count, spread, downward){
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-renderer.domElement.addEventListener('click', e=>{
+/* ---------- campfire drag-and-drop ---------- */
+let isDraggingFire = false;
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0 plane
+const dragIntersection = new THREE.Vector3();
+const dragOffset = new THREE.Vector3();
+
+// Collect all campfire meshes for raycasting
+const campfireMeshes = [];
+campfire.traverse(c => { if(c.isMesh) campfireMeshes.push(c); });
+
+renderer.domElement.addEventListener('pointerdown', e => {
   mouse.x = (e.clientX/innerWidth)*2-1;
   mouse.y = -(e.clientY/innerHeight)*2+1;
   raycaster.setFromCamera(mouse, camera);
+
+  // Check campfire first
+  const fireHits = raycaster.intersectObjects(campfireMeshes, true);
+  if(fireHits.length > 0){
+    isDraggingFire = true;
+    controls.enabled = false; // disable orbit while dragging fire
+    // Calculate offset between campfire position and drag point on ground
+    raycaster.ray.intersectPlane(groundPlane, dragIntersection);
+    dragOffset.copy(campfire.position).sub(dragIntersection);
+    renderer.domElement.style.cursor = 'grabbing';
+    return; // don't process other clicks
+  }
+
+  // Rod/fish click handling
   const targets = [rodLower, rodUpper, rodTipMesh, grip];
   if(fishGroup.visible) targets.push(fishBody, fishTail, fishBelly, dorsalFin);
-  // include bobber parts
   bobberGroup.traverse(c => { if(c.isMesh) targets.push(c); });
   const hits = raycaster.intersectObjects(targets, true);
   if(!hits.length) return;
@@ -1086,17 +1106,43 @@ renderer.domElement.addEventListener('click', e=>{
   const isFish = (hit===fishBody || hit===fishTail || hit===fishBelly || hit===dorsalFin);
   if(rodState==='IDLE' && isRod){
     rodState='PULLING'; rodAnimT=0;
-    // splash when bobber dips
     spawnSplash(bobberGroup.position.clone(), 12);
     spawnRipple(bobberGroup.position);
   } else if(rodState==='CAUGHT' && isFish){
     rodState='COLLECTING'; rodAnimT=0;
     fishStart = fishGroup.position.clone();
     fishEnd = bucket.position.clone().add(new THREE.Vector3(0,0.6,0));
-    // splash when fish leaves water
     spawnSplash(fishGroup.position.clone(), 18);
     spawnRipple(fishGroup.position);
   }
+});
+
+renderer.domElement.addEventListener('pointermove', e => {
+  if(!isDraggingFire) return;
+  mouse.x = (e.clientX/innerWidth)*2-1;
+  mouse.y = -(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(groundPlane, dragIntersection);
+  campfire.position.x = dragIntersection.x + dragOffset.x;
+  campfire.position.z = dragIntersection.z + dragOffset.z;
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if(isDraggingFire){
+    isDraggingFire = false;
+    controls.enabled = true;
+    renderer.domElement.style.cursor = 'default';
+  }
+});
+
+// Hover cursor change for campfire
+renderer.domElement.addEventListener('mousemove', e => {
+  if(isDraggingFire) return;
+  mouse.x = (e.clientX/innerWidth)*2-1;
+  mouse.y = -(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  const fireHover = raycaster.intersectObjects(campfireMeshes, true);
+  renderer.domElement.style.cursor = fireHover.length > 0 ? 'grab' : 'default';
 });
 
 let fishStart=new THREE.Vector3(), fishEnd=new THREE.Vector3();
@@ -1126,6 +1172,12 @@ addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
 
 let canTilt = 0;
 let canTiltTarget = 0;
+
+// Smooth velocity for watering can
+const canVelocity = new THREE.Vector2(0, 0);
+const canAccel = 18;
+const canFriction = 8;
+const canMaxSpeed = 4;
 
 function tryWater(){
   // find nearest plant within range
@@ -1174,16 +1226,6 @@ sunSlider.addEventListener('input', ()=>{
   sun.position.set(Math.cos(a)*15, Math.sin(a)*15+2, 8);
   document.getElementById('sunVal').textContent = sunSlider.value+'°';
 });
-const fireX = document.getElementById('fireX');
-const fireZ = document.getElementById('fireZ');
-function updateFirePos(){
-  campfire.position.x = parseFloat(fireX.value);
-  campfire.position.z = 1 + parseFloat(fireZ.value);
-  document.getElementById('fxVal').textContent = fireX.value;
-  document.getElementById('fzVal').textContent = fireZ.value;
-}
-fireX.addEventListener('input', updateFirePos);
-fireZ.addEventListener('input', updateFirePos);
 
 /* ---------- resize ---------- */
 addEventListener('resize', ()=>{
@@ -1193,36 +1235,123 @@ addEventListener('resize', ()=>{
 });
 
 /* ---------- animate ---------- */
+// River boundaries for kayak constraint
+const riverMinZ = 5.5;  // near bank
+const riverMaxZ = 14.5; // far bank
+const riverMinX = -35;
+const riverMaxX = 35;
+
+// Kayak velocity for smooth movement
+const kayakVel = { forward: 0, turn: 0 };
+const kayakAccel = 6;
+const kayakTurnAccel = 4;
+const kayakFriction = 3;
+const kayakTurnFriction = 5;
+const kayakMaxSpeed = 5;
+const kayakMaxTurn = 2.2;
+
 function applyMovement(dt){
   if(controlMode === 'KAYAK'){
-    // kayak movement
-    const speed = 5;
+    // Kayak movement — velocity-based with acceleration
     kayakMoving = false;
-    if(keys['w']){ kayakGroup.position.z -= speed*dt*Math.cos(kayakGroup.rotation.y); kayakGroup.position.x += speed*dt*Math.sin(kayakGroup.rotation.y); kayakMoving=true; }
-    if(keys['s']){ kayakGroup.position.z += speed*dt*Math.cos(kayakGroup.rotation.y); kayakGroup.position.x -= speed*dt*Math.sin(kayakGroup.rotation.y); kayakMoving=true; }
-    if(keys['a']){ kayakGroup.rotation.y += 1.8*dt; kayakMoving=true; }
-    if(keys['d']){ kayakGroup.rotation.y -= 1.8*dt; kayakMoving=true; }
-    // keep kayak on water
+
+    // Forward/backward acceleration
+    if(keys['w']){ kayakVel.forward += kayakAccel * dt; kayakMoving = true; }
+    if(keys['s']){ kayakVel.forward -= kayakAccel * dt; kayakMoving = true; }
+    // Turn acceleration
+    if(keys['a']){ kayakVel.turn += kayakTurnAccel * dt; kayakMoving = true; }
+    if(keys['d']){ kayakVel.turn -= kayakTurnAccel * dt; kayakMoving = true; }
+
+    // Apply friction (decelerate when no input)
+    if(!keys['w'] && !keys['s']){
+      kayakVel.forward -= kayakVel.forward * kayakFriction * dt;
+      if(Math.abs(kayakVel.forward) < 0.01) kayakVel.forward = 0;
+    }
+    if(!keys['a'] && !keys['d']){
+      kayakVel.turn -= kayakVel.turn * kayakTurnFriction * dt;
+      if(Math.abs(kayakVel.turn) < 0.01) kayakVel.turn = 0;
+    }
+
+    // Clamp speeds
+    kayakVel.forward = Math.max(-kayakMaxSpeed, Math.min(kayakMaxSpeed, kayakVel.forward));
+    kayakVel.turn = Math.max(-kayakMaxTurn, Math.min(kayakMaxTurn, kayakVel.turn));
+
+    // Apply turn
+    kayakGroup.rotation.y += kayakVel.turn * dt;
+
+    // Move forward/backward in the direction the kayak is facing
+    // kayak's local forward is along +X when rotation.y = PI/2 (initial)
+    // The forward direction vector from rotation.y:
+    const fwdX = Math.sin(kayakGroup.rotation.y);
+    const fwdZ = -Math.cos(kayakGroup.rotation.y);
+    kayakGroup.position.x -= fwdX * kayakVel.forward * dt;
+    kayakGroup.position.z -= fwdZ * kayakVel.forward * dt;
+
+    // Constrain kayak to river boundaries
+    kayakGroup.position.x = Math.max(riverMinX, Math.min(riverMaxX, kayakGroup.position.x));
+    kayakGroup.position.z = Math.max(riverMinZ, Math.min(riverMaxZ, kayakGroup.position.z));
+
+    // Bounce back velocity if hitting boundary
+    if(kayakGroup.position.z <= riverMinZ || kayakGroup.position.z >= riverMaxZ){
+      kayakVel.forward *= 0.1;
+    }
+    if(kayakGroup.position.x <= riverMinX || kayakGroup.position.x >= riverMaxX){
+      kayakVel.forward *= 0.1;
+    }
+
+    // Keep kayak on water with bobbing
     kayakGroup.position.y = waterY + 0.08 + Math.sin(clock.elapsedTime*1.5)*0.03;
-    // gentle rock
+    // Gentle rock
     kayakGroup.rotation.x = Math.sin(clock.elapsedTime*2)*0.03;
     kayakGroup.rotation.z = Math.sin(clock.elapsedTime*1.7+1)*0.02;
-    // paddle animation
-    if(kayakMoving){
-      paddleAnimT += dt*4;
-      paddleGroup.rotation.z = Math.sin(paddleAnimT)*0.6;
-      paddleGroup.position.x = Math.sin(paddleAnimT)*0.15;
+
+    // Paddle animation — more paddling when moving faster
+    const speedRatio = Math.abs(kayakVel.forward) / kayakMaxSpeed;
+    if(speedRatio > 0.05){
+      paddleAnimT += dt * (3 + speedRatio * 4);
+      paddleGroup.rotation.z = Math.sin(paddleAnimT) * 0.6;
+      paddleGroup.position.x = Math.sin(paddleAnimT) * 0.15;
     }
   } else {
-    // watering can movement
-    const speed = 4;
-    if(keys['w']) canGroup.position.z -= speed*dt;
-    if(keys['s']) canGroup.position.z += speed*dt;
-    if(keys['a']) canGroup.position.x -= speed*dt;
-    if(keys['d']) canGroup.position.x += speed*dt;
-    canTilt += (canTiltTarget - canTilt)*0.15;
-    canGroup.rotation.z = canTilt;
-    // kayak still bobs even when not controlled
+    // Watering can movement — velocity-based with acceleration and friction
+    let inputX = 0, inputZ = 0;
+    if(keys['w']) inputZ = -1;
+    if(keys['s']) inputZ = 1;
+    if(keys['a']) inputX = -1;
+    if(keys['d']) inputX = 1;
+
+    // Normalize diagonal input
+    const inputLen = Math.sqrt(inputX*inputX + inputZ*inputZ);
+    if(inputLen > 0){
+      inputX /= inputLen;
+      inputZ /= inputLen;
+      canVelocity.x += inputX * canAccel * dt;
+      canVelocity.y += inputZ * canAccel * dt;
+    }
+
+    // Apply friction
+    canVelocity.x -= canVelocity.x * canFriction * dt;
+    canVelocity.y -= canVelocity.y * canFriction * dt;
+    if(Math.abs(canVelocity.x) < 0.01) canVelocity.x = 0;
+    if(Math.abs(canVelocity.y) < 0.01) canVelocity.y = 0;
+
+    // Clamp speed
+    const curSpeed = Math.sqrt(canVelocity.x*canVelocity.x + canVelocity.y*canVelocity.y);
+    if(curSpeed > canMaxSpeed){
+      canVelocity.x = (canVelocity.x/curSpeed) * canMaxSpeed;
+      canVelocity.y = (canVelocity.y/curSpeed) * canMaxSpeed;
+    }
+
+    canGroup.position.x += canVelocity.x * dt;
+    canGroup.position.z += canVelocity.y * dt;
+
+    // Tilt the can slightly in the direction of movement for visual feedback
+    const moveTiltX = -canVelocity.y * 0.04; // tilt forward/back
+    canTilt += (canTiltTarget - canTilt) * 0.15;
+    canGroup.rotation.z = canTilt + canVelocity.x * 0.03;
+    canGroup.rotation.x = moveTiltX;
+
+    // Kayak still bobs even when not controlled
     kayakGroup.position.y = waterY + 0.08 + Math.sin(clock.elapsedTime*1.5)*0.03;
     kayakGroup.rotation.x = Math.sin(clock.elapsedTime*2)*0.03;
     kayakGroup.rotation.z = Math.sin(clock.elapsedTime*1.7+1)*0.02;

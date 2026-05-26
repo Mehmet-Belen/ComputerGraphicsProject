@@ -55,6 +55,8 @@
   <div class="stat">🍅 Tomato: <b id="plantStage0">0</b>/2</div>
   <div class="stat">🌻 Sunflower: <b id="plantStage1">0</b>/2</div>
   <div class="stat">🌵 Cactus: <b id="plantStage2">0</b>/2</div>
+  <div class="stat">🌷 Tulip: <b id="plantStage3">0</b>/2</div>
+  <div class="stat">🪻 Bluebell: <b id="plantStage4">0</b>/2</div>
   <div class="stat">💧 Waterings: <b id="waterCount">0</b></div>
 </div>
 <div id="modeIndicator" class="kayak">🛶 Kayak Mode</div>
@@ -184,11 +186,13 @@ ground.rotation.x = -Math.PI/2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// soil patches for 3 plants
+// soil patches for 5 plants
 const soilPositions = [
   new THREE.Vector3(3.5, 0.01, 1),
   new THREE.Vector3(5.0, 0.01, 1.2),
-  new THREE.Vector3(4.2, 0.01, 2.8)
+  new THREE.Vector3(4.2, 0.01, 2.8),
+  new THREE.Vector3(5.8, 0.01, 2.3),
+  new THREE.Vector3(2.8, 0.01, 2.5)
 ];
 soilPositions.forEach(pos => {
   const soil = new THREE.Mesh(
@@ -502,10 +506,12 @@ function buildTent(){
   const ropeData = [
     {from:[D/2+0.05, H*0.9, 0], to:[D/2+2.0, 0.04, 0]},
     {from:[-(D/2+0.05), H*0.9, 0], to:[-(D/2+2.0), 0.04, 0]},
-    {from:[0, H*0.65, W+0.02], to:[0, 0.04, W+1.6]},
-    {from:[0, H*0.65, -(W+0.02)], to:[0, 0.04, -(W+1.6)]},
-    {from:[D/4, H*0.6, W+0.02], to:[D/4, 0.04, W+1.3]},
-    {from:[D/4, H*0.6, -(W+0.02)], to:[D/4, 0.04, -(W+1.3)]},
+    {from:[0, H*0.65, W*0.35+0.02], to:[0, 0.04, W+1.6]},
+    {from:[0, H*0.65, -(W*0.35+0.02)], to:[0, 0.04, -(W+1.6)]},
+    {from:[D/4, H*0.6, W*0.4+0.02], to:[D/4, 0.04, W+1.3]},
+    {from:[D/4, H*0.6, -(W*0.4+0.02)], to:[D/4, 0.04, -(W+1.3)]},
+    {from:[-D/4, H*0.6, W*0.4+0.02], to:[-D/4, 0.04, W+1.3]},
+    {from:[-D/4, H*0.6, -(W*0.4+0.02)], to:[-D/4, 0.04, -(W+1.3)]},
   ];
   ropeData.forEach(rd=>{
     const pts = [new THREE.Vector3(...rd.from), new THREE.Vector3(...rd.to)];
@@ -519,7 +525,8 @@ function buildTent(){
   return g;
 }
 const tent = buildTent();
-tent.position.set(-3.5, 0, 0);
+tent.position.set(-3.5, 0, -3.5);
+tent.rotation.y = -Math.PI / 4; // Face river at 45 degree angle (mirrored)
 scene.add(tent);
 
 // Flat rock for fish display
@@ -527,7 +534,7 @@ const fishRock = new THREE.Mesh(
   new THREE.CylinderGeometry(1.0, 1.1, 0.1, 8),
   new THREE.MeshStandardMaterial({ color:0x555555, roughness:0.9, flatShading:true })
 );
-fishRock.position.set(-1.2, 0.05, 1.5);
+fishRock.position.set(1.5, 0.05, -2.5); // Near tent but not touching
 fishRock.scale.z = 0.7; // Make it oval
 fishRock.receiveShadow = true;
 fishRock.castShadow = true;
@@ -1266,7 +1273,7 @@ canGroup.rotation.y = Math.PI/2;
 canGroup.traverse(o=>o.castShadow=true);
 scene.add(canGroup);
 
-/* ---------- 3 plant types ---------- */
+/* ---------- 5 plant types ---------- */
 const plantData = [
   { // 0: Tomato plant (original)
     pos: soilPositions[0],
@@ -1288,6 +1295,20 @@ const plantData = [
     fruitEmissive: 0x662244, fruitCount: 3, topRadius: 0.18,
     stage: 0, waterings: 0, currentScale: 0.2, targetScale: 0.2,
     waterThreshold1: 3, waterThreshold2: 7
+  },
+  { // 3: Tulip
+    pos: soilPositions[3],
+    stemColor: 0x448833, leafColor: 0x55aa44, fruitColor: 0xff4488,
+    fruitEmissive: 0x661133, fruitCount: 2, topRadius: 0.2,
+    stage: 0, waterings: 0, currentScale: 0.18, targetScale: 0.18,
+    waterThreshold1: 2, waterThreshold2: 5
+  },
+  { // 4: Bluebell
+    pos: soilPositions[4],
+    stemColor: 0x337744, leafColor: 0x449955, fruitColor: 0x4488ff,
+    fruitEmissive: 0x113366, fruitCount: 5, topRadius: 0.22,
+    stage: 0, waterings: 0, currentScale: 0.15, targetScale: 0.15,
+    waterThreshold1: 3, waterThreshold2: 6
   }
 ];
 

@@ -899,6 +899,7 @@ canBand.rotation.x = Math.PI/2;
 canBand.position.y = 0.35;
 canGroup.add(canBand);
 canGroup.position.set(1.5, 0, -1);
+canGroup.rotation.y = Math.PI/2;
 canGroup.traverse(o=>o.castShadow=true);
 scene.add(canGroup);
 
@@ -1282,10 +1283,11 @@ function applyMovement(dt){
     // Move forward/backward in the direction the kayak is facing
     // kayak's local forward is along +X when rotation.y = PI/2 (initial)
     // The forward direction vector from rotation.y:
+    // Hull is along local +Z, so forward in world = (sin(θ), 0, cos(θ))
     const fwdX = Math.sin(kayakGroup.rotation.y);
-    const fwdZ = -Math.cos(kayakGroup.rotation.y);
-    kayakGroup.position.x -= fwdX * kayakVel.forward * dt;
-    kayakGroup.position.z -= fwdZ * kayakVel.forward * dt;
+    const fwdZ = Math.cos(kayakGroup.rotation.y);
+    kayakGroup.position.x += fwdX * kayakVel.forward * dt;
+    kayakGroup.position.z += fwdZ * kayakVel.forward * dt;
 
     // Constrain kayak to river boundaries
     kayakGroup.position.x = Math.max(riverMinX, Math.min(riverMaxX, kayakGroup.position.x));

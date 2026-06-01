@@ -61,6 +61,8 @@
     <div class="stat">🌷 Tulip: <b id="plantStage3">0</b>/2</div>
     <div class="stat">🪻 Bluebell: <b id="plantStage4">0</b>/2</div>
     <div class="stat">💧 Waterings: <b id="waterCount">0</b></div>
+    <hr>
+    <div class="stat">🧺 Harvested: <b id="harvestCount">0</b></div>
   </div>
 </div>
 <div id="modeIndicator" class="kayak">🛶 Kayak Mode</div>
@@ -69,7 +71,8 @@
   <kbd>Tab</kbd> switch mode (🛶 Kayak ↔ 💧 Watering Can) ·
   <kbd>WASD</kbd> move active object · <kbd>E</kbd> water nearest plant ·
   <kbd>F</kbd> load/unload fish (kayak mode) ·
-  Click rod to fish · Click fish to collect · 🔥 Click & drag campfire to move.
+  Click rod to fish · Click fish to collect · Click ripe fruit to harvest ·
+  🔥 Click & drag campfire to move.
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -295,6 +298,40 @@ mtnDataFar.forEach(m=>{
   scene.add(snow);
 });
 
+// foothills along left and right edges (creates a valley enclosure)
+const hillMat = new THREE.MeshStandardMaterial({ color:0x4a6e3a, roughness:1, flatShading:true });
+const hillMatDark = new THREE.MeshStandardMaterial({ color:0x3d5a30, roughness:1, flatShading:true });
+// Left side foothills (x ≈ -25 to -38) — avoiding river zone z=4..16
+const leftHills = [
+  {x:-28,z:-18,h:9,r:10},{x:-32,z:-8,h:11,r:12},{x:-35,z:-5,h:8,r:9},
+  {x:-30,z:-3,h:7,r:8},{x:-38,z:-14,h:10,r:11},{x:-33,z:24,h:9,r:10},
+  {x:-36,z:28,h:7,r:9},{x:-29,z:22,h:6,r:8},{x:-37,z:-22,h:8,r:9},
+  {x:-26,z:26,h:5,r:7},{x:-31,z:-12,h:6,r:8},{x:-34,z:32,h:7,r:9}
+];
+leftHills.forEach(h=>{
+  const mat = Math.random() < 0.5 ? hillMat : hillMatDark;
+  const hill = new THREE.Mesh(new THREE.ConeGeometry(h.r,h.h,6+Math.floor(Math.random()*3)), mat);
+  hill.position.set(h.x, h.h/2-2, h.z);
+  hill.rotation.y = Math.random()*Math.PI;
+  hill.scale.x = 1.0 + Math.random()*0.4; // stretch for natural look
+  scene.add(hill);
+});
+// Right side foothills (x ≈ 25 to 38) — avoiding river zone z=4..16
+const rightHills = [
+  {x:28,z:-18,h:10,r:11},{x:33,z:-8,h:8,r:10},{x:36,z:-5,h:9,r:9},
+  {x:30,z:-4,h:7,r:8},{x:38,z:-14,h:11,r:12},{x:34,z:24,h:8,r:10},
+  {x:37,z:28,h:7,r:9},{x:29,z:22,h:6,r:8},{x:35,z:-22,h:9,r:10},
+  {x:27,z:26,h:5,r:7},{x:32,z:-12,h:6,r:8},{x:36,z:32,h:7,r:9}
+];
+rightHills.forEach(h=>{
+  const mat = Math.random() < 0.5 ? hillMat : hillMatDark;
+  const hill = new THREE.Mesh(new THREE.ConeGeometry(h.r,h.h,6+Math.floor(Math.random()*3)), mat);
+  hill.position.set(h.x, h.h/2-2, h.z);
+  hill.rotation.y = Math.random()*Math.PI;
+  hill.scale.x = 1.0 + Math.random()*0.4;
+  scene.add(hill);
+});
+
 // clouds
 const cloudGroups = [];
 function makeCloud(x,y,z,sc){
@@ -428,6 +465,25 @@ function makeBush(){
 }
 
 const campsiteRadius = 6;
+
+// Collision check: prevent trees/bushes from spawning inside mountains, foothills, hut, or garden
+const allTerrainFeatures = [
+  ...mtnData, ...mtnDataFar, ...leftHills, ...rightHills
+];
+function isInsideTerrain(x, z){
+  for(const m of allTerrainFeatures){
+    const dx = x - m.x, dz = z - m.z;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+    if(dist < m.r * 0.85) return true;
+  }
+  // Fishing hut exclusion zone (hutGroup at 17.5, 3.0 — plus dock area)
+  const hutDx = x - 17.5, hutDz = z - 3.0;
+  if(Math.sqrt(hutDx*hutDx + hutDz*hutDz) < 5.0) return true;
+  // Plant/garden area exclusion (soilPositions around x:2.5..6.5, z:-0.5..3.5)
+  if(x > 2.0 && x < 7.0 && z > -1.0 && z < 4.0) return true;
+  return false;
+}
+
 for(let i=0;i<32;i++){
   const t = makeTree();
   let x,z,tries=0;
@@ -437,7 +493,8 @@ for(let i=0;i<32;i++){
     x = Math.cos(angle)*dist;
     z = Math.sin(angle)*dist-2;
     tries++;
-  } while ((Math.abs(z-10)<6) && tries<10);
+  } while (((Math.abs(z-10)<6) || isInsideTerrain(x,z)) && tries<20);
+  if(isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   const s = 0.65+Math.random()*0.7;
   t.scale.setScalar(s);
@@ -453,7 +510,8 @@ for(let i=0;i<22;i++){
     x = Math.cos(angle)*dist;
     z = Math.sin(angle)*dist-2;
     tries++;
-  } while ((Math.abs(z-10)<6) && tries<10);
+  } while (((Math.abs(z-10)<6) || isInsideTerrain(x,z)) && tries<20);
+  if(isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   const s = 0.7+Math.random()*0.8;
   t.scale.setScalar(s);
@@ -469,7 +527,8 @@ for(let i=0;i<24;i++){
     x = Math.cos(angle)*dist;
     z = Math.sin(angle)*dist-1;
     tries++;
-  } while (((Math.abs(z-10)<6)||(Math.sqrt(x*x+z*z)<3)) && tries<10);
+  } while (((Math.abs(z-10)<6)||(Math.sqrt(x*x+z*z)<3) || isInsideTerrain(x,z)) && tries<20);
+  if(isInsideTerrain(x,z)) continue;
   b.position.set(x, 0, z);
   b.rotation.y = Math.random()*Math.PI*2;
   scene.add(b);
@@ -483,7 +542,7 @@ for(let i=0;i<28;i++){
   const dist = 20+Math.random()*10;
   const x = Math.cos(angle)*dist;
   const z = Math.sin(angle)*dist;
-  if(Math.abs(z-10)<6) continue; // skip river zone
+  if(Math.abs(z-10)<6 || isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   const s = 0.8+Math.random()*0.9;
   t.scale.setScalar(s);
@@ -497,7 +556,7 @@ for(let i=0;i<42;i++){
   const dist = 28+Math.random()*10;
   const x = Math.cos(angle)*dist;
   const z = Math.sin(angle)*dist;
-  if(Math.abs(z-10)<6) continue; // skip river zone
+  if(Math.abs(z-10)<6 || isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   const s = 1.0+Math.random()*1.2;
   t.scale.setScalar(s);
@@ -510,7 +569,7 @@ for(let i=0;i<11;i++){
   const t = (Math.random() < 0.5) ? makePineTree() : makeTree();
   const x = -30 - Math.random()*8;
   const z = -35 + Math.random()*70;
-  if(Math.abs(z-10)<6) continue;
+  if(Math.abs(z-10)<6 || isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   t.scale.setScalar(1.0+Math.random()*1.3);
   t.rotation.y = Math.random()*Math.PI*2;
@@ -521,7 +580,7 @@ for(let i=0;i<11;i++){
   const t = (Math.random() < 0.5) ? makePineTree() : makeTree();
   const x = 30 + Math.random()*8;
   const z = -35 + Math.random()*70;
-  if(Math.abs(z-10)<6) continue;
+  if(Math.abs(z-10)<6 || isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   t.scale.setScalar(1.0+Math.random()*1.3);
   t.rotation.y = Math.random()*Math.PI*2;
@@ -532,6 +591,7 @@ for(let i=0;i<8;i++){
   const t = (Math.random() < 0.5) ? makePineTree() : makeTree();
   const x = -30 + Math.random()*60;
   const z = -25 - Math.random()*13;
+  if(isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   t.scale.setScalar(1.0+Math.random()*1.0);
   t.rotation.y = Math.random()*Math.PI*2;
@@ -542,6 +602,7 @@ for(let i=0;i<12;i++){
   const t = (Math.random() < 0.6) ? makePineTree() : makeTree();
   const x = -30 + Math.random()*60;
   const z = 20 + Math.random()*18;
+  if(isInsideTerrain(x,z)) continue;
   t.position.set(x, 0, z);
   t.scale.setScalar(1.0+Math.random()*1.3);
   t.rotation.y = Math.random()*Math.PI*2;
@@ -554,7 +615,7 @@ for(let i=0;i<24;i++){
   const dist = 22+Math.random()*16;
   const x = Math.cos(angle)*dist;
   const z = Math.sin(angle)*dist;
-  if(Math.abs(z-10)<6) continue;
+  if(Math.abs(z-10)<6 || isInsideTerrain(x,z)) continue;
   b.position.set(x, 0, z);
   b.scale.setScalar(1.0+Math.random()*0.8);
   b.rotation.y = Math.random()*Math.PI*2;
@@ -1381,6 +1442,139 @@ canGroup.rotation.y = Math.PI/2;
 canGroup.traverse(o=>o.castShadow=true);
 scene.add(canGroup);
 
+/* ---------- harvest basket ---------- */
+const harvestBasket = new THREE.Group();
+const basketMat = new THREE.MeshStandardMaterial({ color:0x8B6914, roughness:0.9, flatShading:true });
+const basketDarkMat = new THREE.MeshStandardMaterial({ color:0x6B4F10, roughness:0.95 });
+// basket body (open cylinder)
+const basketBody = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.55, 0.4, 0.5, 12, 1, true), basketMat
+);
+basketBody.position.y = 0.25;
+harvestBasket.add(basketBody);
+// basket bottom
+const basketBottom = new THREE.Mesh(
+  new THREE.CircleGeometry(0.4, 12),
+  basketDarkMat
+);
+basketBottom.rotation.x = -Math.PI/2;
+basketBottom.position.y = 0.005;
+harvestBasket.add(basketBottom);
+// basket inner dark circle (visible from above)
+const basketInner = new THREE.Mesh(
+  new THREE.CircleGeometry(0.38, 12),
+  new THREE.MeshStandardMaterial({ color:0x4a3510, roughness:1, side:THREE.DoubleSide })
+);
+basketInner.rotation.x = -Math.PI/2;
+basketInner.position.y = 0.01;
+harvestBasket.add(basketInner);
+// weave bands
+for(const yOff of [0.1, 0.25, 0.4]){
+  const radius = 0.4 + (yOff/0.5)*0.15;
+  const band = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, 0.012, 6, 20),
+    basketDarkMat
+  );
+  band.rotation.x = Math.PI/2;
+  band.position.y = yOff;
+  harvestBasket.add(band);
+}
+// basket handle (arch)
+const basketHandle = new THREE.Mesh(
+  new THREE.TorusGeometry(0.42, 0.02, 8, 20, Math.PI),
+  basketDarkMat
+);
+basketHandle.position.y = 0.52;
+basketHandle.rotation.y = Math.PI/2;
+harvestBasket.add(basketHandle);
+harvestBasket.position.set(4.2, 0, 0.0); // near the plant area center
+harvestBasket.castShadow = true;
+scene.add(harvestBasket);
+
+let totalHarvested = 0;
+const basketFruitVisuals = [];
+function updateBasketFruitVisuals(){
+  basketFruitVisuals.forEach(f => scene.remove(f));
+  basketFruitVisuals.length = 0;
+  const maxVisible = Math.min(totalHarvested, 15);
+  for(let i=0; i<maxVisible; i++){
+    const colors = [0xe83838, 0xffcc22, 0xff66aa, 0xff4488, 0x4488ff];
+    const fm = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06+Math.random()*0.03, 8, 6),
+      new THREE.MeshStandardMaterial({ color:colors[i%colors.length], roughness:0.4 })
+    );
+    const angle = i * 2.4;
+    const r = Math.sqrt(i) * 0.1;
+    fm.position.set(
+      harvestBasket.position.x + Math.cos(angle)*r,
+      harvestBasket.position.y + 0.08 + (i * 0.04),
+      harvestBasket.position.z + Math.sin(angle)*r
+    );
+    scene.add(fm);
+    basketFruitVisuals.push(fm);
+  }
+}
+
+// Harvest animation state
+const harvestAnims = []; // {mesh, startPos, endPos, t, plantIdx, fruitIdx, color}
+
+function startHarvest(plantIdx, fruitIdx){
+  const p = allPlantParts[plantIdx];
+  const fr = p.fruits[fruitIdx];
+  if(!fr || !fr.visible || fr.userData.harvested) return false;
+
+  // Get fruit world position
+  fr.updateWorldMatrix(true, false);
+  const worldPos = new THREE.Vector3();
+  fr.getWorldPosition(worldPos);
+
+  // Create a flying fruit mesh
+  const flyFruit = new THREE.Mesh(
+    fr.geometry.clone(),
+    fr.material.clone()
+  );
+  flyFruit.position.copy(worldPos);
+  scene.add(flyFruit);
+
+  // Hide original fruit
+  fr.visible = false;
+  fr.userData.harvested = true;
+
+  harvestAnims.push({
+    mesh: flyFruit,
+    startPos: worldPos.clone(),
+    endPos: harvestBasket.position.clone().add(new THREE.Vector3(0, 0.6, 0)),
+    t: 0,
+    plantIdx,
+    fruitIdx,
+    color: fr.material.color.getHex()
+  });
+  return true;
+}
+
+function updateHarvestAnims(dt){
+  for(let i=harvestAnims.length-1; i>=0; i--){
+    const ha = harvestAnims[i];
+    ha.t += dt * 1.5;
+    const t = Math.min(ha.t, 1);
+    const eased = t < 0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+    const p = new THREE.Vector3().lerpVectors(ha.startPos, ha.endPos, eased);
+    p.y += Math.sin(t * Math.PI) * 1.5;
+    ha.mesh.position.copy(p);
+    ha.mesh.rotation.y = t * Math.PI * 3;
+    ha.mesh.rotation.z = t * Math.PI * 2;
+    const sc = 1 + Math.sin(t * Math.PI) * 0.5;
+    ha.mesh.scale.setScalar(sc);
+    if(t >= 1){
+      scene.remove(ha.mesh);
+      harvestAnims.splice(i, 1);
+      totalHarvested++;
+      document.getElementById('harvestCount').textContent = totalHarvested;
+      updateBasketFruitVisuals();
+    }
+  }
+}
+
 /* ---------- 5 plant types ---------- */
 const plantData = [
   { // 0: Tomato plant (original)
@@ -1585,6 +1779,28 @@ renderer.domElement.addEventListener('pointerdown', e => {
     dragOffset.copy(campfire.position).sub(dragIntersection);
     renderer.domElement.style.cursor = 'grabbing';
     return; // don't process other clicks
+  }
+
+  // Check fruit clicks (harvest)
+  const allFruitMeshes = [];
+  allPlantParts.forEach((p, pi) => {
+    if(p.data.stage >= 2){
+      p.fruits.forEach((fr, fi) => {
+        if(fr.visible && !fr.userData.harvested){
+          fr.userData._plantIdx = pi;
+          fr.userData._fruitIdx = fi;
+          allFruitMeshes.push(fr);
+        }
+      });
+    }
+  });
+  if(allFruitMeshes.length > 0){
+    const fruitHits = raycaster.intersectObjects(allFruitMeshes, true);
+    if(fruitHits.length > 0){
+      const hitFruit = fruitHits[0].object;
+      startHarvest(hitFruit.userData._plantIdx, hitFruit.userData._fruitIdx);
+      return;
+    }
   }
 
   // Rod/fish click handling
@@ -2123,6 +2339,7 @@ function animate(){
   updateDrops(dt);
   updateSplashes(dt);
   updateRod(dt);
+  updateHarvestAnims(dt);
 
   // plant scale lerp for all 3 plants
   allPlantParts.forEach(p => {

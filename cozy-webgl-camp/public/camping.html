@@ -48,7 +48,7 @@
     <input id="fireSlider" type="range" min="0" max="5" step="0.1" value="2" />
     <label>☀️ Sun Angle: <span id="sunVal">45°</span></label>
     <input id="sunSlider" type="range" min="0" max="180" step="1" value="45" />
-    <label><input type="checkbox" id="nightModeToggle" /> 🌙 Night Mode</label>
+    <label><input type="checkbox" id="nightModeToggle" checked /> 🌙 Night Mode</label>
     <label>🔥 Kamp ateşini sürükle: mouse ile tıkla ve taşı</label>
     <hr>
     <div class="stat">🐟 Fish Caught: <b id="fishCount">0</b></div>
@@ -2316,7 +2316,7 @@ sunSlider.addEventListener('input', ()=>{
   document.getElementById('sunVal').textContent = sunSlider.value+'°';
 });
 
-let isNightMode = false;
+let isNightMode = true;
 document.getElementById('nightModeToggle').addEventListener('change', (e) => {
   isNightMode = e.target.checked;
 });

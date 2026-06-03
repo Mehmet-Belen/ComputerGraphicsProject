@@ -53,7 +53,7 @@
     <hr>
     <div class="stat">🐟 Fish Caught: <b id="fishCount">0</b></div>
     <div class="stat">🪣 In Bucket: <b id="bucketFish">0</b></div>
-    <div class="stat">🛶 On Kayak: <b id="kayakFish">0</b></div>
+    <div class="stat">🛶 On Boat: <b id="kayakFish">0</b></div>
     <div class="stat">🏕️ At Camp: <b id="campFish">0</b></div>
     <div class="stat">🍅 Tomato: <b id="plantStage0">0</b>/2</div>
     <div class="stat">🌻 Sunflower: <b id="plantStage1">0</b>/2</div>
@@ -65,12 +65,12 @@
     <div class="stat">🧺 Harvested: <b id="harvestCount">0</b></div>
   </div>
 </div>
-<div id="modeIndicator" class="kayak">🛶 Kayak Mode</div>
+<div id="modeIndicator" class="kayak">🛶 Boat Mode</div>
 <div id="hint">
   <b>Controls:</b> <kbd>Drag</kbd> orbit · <kbd>Scroll</kbd> zoom ·
-  <kbd>Tab</kbd> switch mode (🛶 Kayak ↔ 💧 Watering Can) ·
+  <kbd>Tab</kbd> switch mode (🛶 Boat ↔ 💧 Watering Can) ·
   <kbd>WASD</kbd> move active object · <kbd>E</kbd> water nearest plant ·
-  <kbd>F</kbd> load/unload fish (kayak mode) ·
+  <kbd>F</kbd> load/unload fish (boat mode) ·
   Click rod to fish · Click fish to collect · Click ripe fruit to harvest ·
   🔥 Click & drag campfire to move.
 </div>
@@ -1869,7 +1869,7 @@ addEventListener('keydown', e=>{
     controlMode = controlMode === 'KAYAK' ? 'CAN' : 'KAYAK';
     const ind = document.getElementById('modeIndicator');
     if(controlMode === 'KAYAK'){
-      ind.textContent = '🛶 Kayak Mode';
+      ind.textContent = '🛶 Boat Mode';
       ind.className = 'kayak';
     } else {
       ind.textContent = '💧 Watering Can Mode';

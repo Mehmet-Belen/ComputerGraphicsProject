@@ -82,7 +82,7 @@
    WebGL Camping Scene — single file
    ========================================================= */
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc8d8e8, 0.016);
+scene.fog = new THREE.FogExp2(0xaaccff, 0.006);
 
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -118,24 +118,25 @@ function makeCanvasTex(w,h,draw){
 }
 const grassTex = makeCanvasTex(512,512,(g,w,h)=>{
   const baseGrd=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w*0.8);
-  baseGrd.addColorStop(0,'#4a8030');baseGrd.addColorStop(0.6,'#3d6e28');baseGrd.addColorStop(1,'#356522');
+  baseGrd.addColorStop(0,'#349020');baseGrd.addColorStop(0.6,'#287e18');baseGrd.addColorStop(1,'#1f6d14');
   g.fillStyle=baseGrd;g.fillRect(0,0,w,h);
   for(let i=0;i<10;i++){
     const px=Math.random()*w,py=Math.random()*h,pr=20+Math.random()*35;
     const pGrd=g.createRadialGradient(px,py,0,px,py,pr);
-    pGrd.addColorStop(0,`rgba(${55+Math.floor(Math.random()*25)},${45+Math.floor(Math.random()*20)},${18+Math.floor(Math.random()*12)},0.35)`);
+    // Darker lush spots instead of dry dirt
+    pGrd.addColorStop(0,`rgba(${20+Math.floor(Math.random()*15)},${60+Math.floor(Math.random()*30)},${15+Math.floor(Math.random()*15)},0.35)`);
     pGrd.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=pGrd;g.fillRect(px-pr,py-pr,pr*2,pr*2);
   }
   for(let i=0;i<4000;i++){
     const x=Math.random()*w,y=Math.random()*h;
-    const shade=70+Math.random()*90;
-    g.fillStyle=`rgb(${25+Math.floor(Math.random()*50)},${Math.floor(shade+Math.random()*50)},${20+Math.floor(Math.random()*35)})`;
+    const shade=90+Math.random()*110;
+    g.fillStyle=`rgb(${15+Math.floor(Math.random()*30)},${Math.floor(shade+Math.random()*40)},${15+Math.floor(Math.random()*30)})`;
     g.fillRect(x,y,1+Math.random()*2,1+Math.random()*4);
   }
   for(let i=0;i<500;i++){
     const x=Math.random()*w,y=Math.random()*h;
-    g.fillStyle=`rgba(${100+Math.floor(Math.random()*50)},${160+Math.floor(Math.random()*60)},${60+Math.floor(Math.random()*30)},0.5)`;
+    g.fillStyle=`rgba(${80+Math.floor(Math.random()*40)},${180+Math.floor(Math.random()*60)},${50+Math.floor(Math.random()*30)},0.6)`;
     g.fillRect(x,y,1,1+Math.random()*2);
   }
 });
@@ -249,16 +250,16 @@ const woodTex = makeCanvasTex(128,128,(g,w,h)=>{
 });
 
 /* ---------- sky / lights ---------- */
-scene.background = new THREE.Color(0xc8d8e8);
+scene.background = new THREE.Color(0xaaccff);
 
 // Sky dome with shader gradient
 const skyGeo = new THREE.SphereGeometry(88, 32, 20);
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false,
   uniforms: {
-    topColor: { value: new THREE.Color(0x1a4488) },
-    midColor: { value: new THREE.Color(0x6eaadd) },
-    bottomColor: { value: new THREE.Color(0xd4c8a8) },
+    topColor: { value: new THREE.Color(0x1a55aa) },
+    midColor: { value: new THREE.Color(0x6ebbee) },
+    bottomColor: { value: new THREE.Color(0xe0f0ff) },
     nightMix: { value: 0.0 }
   },
   vertexShader: [
@@ -311,7 +312,7 @@ const starMat = new THREE.PointsMaterial({ color:0xffffff, size:0.35, transparen
 const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
-const hemi = new THREE.HemisphereLight(0x88bbee, 0x4a7c2f, 0.75);
+const hemi = new THREE.HemisphereLight(0x99ccff, 0x5a8c3f, 0.85);
 scene.add(hemi);
 
 // Rim light for depth separation
@@ -319,7 +320,7 @@ const rimLight = new THREE.DirectionalLight(0xaaccff, 0.2);
 rimLight.position.set(-8, 5, -10);
 scene.add(rimLight);
 
-const sun = new THREE.DirectionalLight(0xfff0d0, 0.7);
+const sun = new THREE.DirectionalLight(0xfffae6, 0.85);
 sun.position.set(10,15,8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048,2048);
@@ -1244,56 +1245,176 @@ let rodState = 'IDLE'; // IDLE | PULLING | CAUGHT | COLLECTING
 let rodAnimT = 0;
 let bobberDipTimer = 0; // random bobber dipping for anticipation
 
-/* ---------- kayak ---------- */
+/* ---------- kayak (now a realistic wooden rowboat) ---------- */
 const kayakGroup = new THREE.Group();
-const kayakMat = new THREE.MeshStandardMaterial({ color:0xcc5522, roughness:0.6, metalness:0.1 });
-const kayakInnerMat = new THREE.MeshStandardMaterial({ color:0xaa4418, roughness:0.7, side:THREE.DoubleSide });
-// hull
-const hullShape = new THREE.Shape();
-hullShape.moveTo(0, 0);
-hullShape.bezierCurveTo(0.6, 0, 0.7, 0.3, 0.5, 0.35);
-hullShape.lineTo(-0.5, 0.35);
-hullShape.bezierCurveTo(-0.7, 0.3, -0.6, 0, 0, 0);
-const hullGeom = new THREE.ExtrudeGeometry(hullShape, { depth:3, bevelEnabled:true, bevelThickness:0.05, bevelSize:0.05, bevelSegments:3 });
-hullGeom.translate(0, -0.1, -1.5);
-const hull = new THREE.Mesh(hullGeom, kayakMat);
+const innerBoatGroup = new THREE.Group();
+innerBoatGroup.position.y = 0.10; // Slightly submerge into water
+kayakGroup.add(innerBoatGroup);
+
+// Materials
+const hullMat = new THREE.MeshStandardMaterial({ 
+  color: 0x5a3015,
+  map: woodTex,
+  roughness: 0.8,
+  side: THREE.DoubleSide 
+});
+const trimMat = new THREE.MeshStandardMaterial({ 
+  color: 0x8b5a2b,
+  map: woodTex,
+  roughness: 0.7 
+});
+const seatMat = new THREE.MeshStandardMaterial({ 
+  color: 0x6e401b,
+  roughness: 0.8 
+});
+const oarMat = new THREE.MeshStandardMaterial({ 
+  color: 0xd2b48c,
+  roughness: 0.7 
+});
+const darkMat = new THREE.MeshStandardMaterial({
+  color: 0x221100,
+  roughness: 0.9
+});
+
+// 1. Smooth curved hull using Parametric-style generation with PlaneGeometry
+const boatLength = 4.2;
+const boatWidth = 1.2;
+const boatDepth = 0.45;
+
+const hullGeo = new THREE.PlaneGeometry(1, 1, 40, 16);
+const pos = hullGeo.attributes.position;
+for(let i=0; i<pos.count; i++){
+  let u = pos.getX(i) + 0.5; // 0 to 1 (stern to bow)
+  let v = pos.getY(i) * 2.0; // -1 to 1 (port to starboard)
+  let z = (u - 0.5) * boatLength;
+  let beam = Math.sin(u * Math.PI) * (1.0 + u * 0.2);
+  let localWidth = beam * boatWidth / 2;
+  let absV = Math.abs(v);
+  let x = Math.sign(v) * localWidth * Math.pow(absV, 0.75);
+  let y = boatDepth * Math.pow(absV, 1.2);
+  let sheer = Math.pow(Math.abs(u - 0.5) * 2, 2.5) * 0.4;
+  y += sheer * absV;
+  pos.setXYZ(i, x, y, z);
+}
+hullGeo.computeVertexNormals();
+const hull = new THREE.Mesh(hullGeo, hullMat);
 hull.castShadow = true;
-kayakGroup.add(hull);
-// inner hull
-const innerHull = new THREE.Mesh(
-  new THREE.BoxGeometry(0.8, 0.15, 2.4),
-  kayakInnerMat
-);
-innerHull.position.y = 0.18;
-kayakGroup.add(innerHull);
-// seat
-const seat = new THREE.Mesh(
-  new THREE.BoxGeometry(0.5, 0.06, 0.4),
-  new THREE.MeshStandardMaterial({ color:0x333333, roughness:0.8 })
-);
-seat.position.set(0, 0.28, 0);
-kayakGroup.add(seat);
-// paddle
+hull.receiveShadow = true;
+innerBoatGroup.add(hull);
+
+// 2. Gunwales (Rails)
+function addRail(isRight) {
+  const path = new THREE.Curve();
+  path.getPoint = function(t) {
+    let u = t;
+    let z = (u - 0.5) * boatLength;
+    let beam = Math.sin(u * Math.PI) * (1.0 + u * 0.2);
+    let localWidth = beam * boatWidth / 2;
+    let x = (isRight ? 1 : -1) * localWidth;
+    let y = boatDepth + Math.pow(Math.abs(u - 0.5) * 2, 2.5) * 0.4;
+    return new THREE.Vector3(x, y, z);
+  };
+  const railGeo = new THREE.TubeGeometry(path, 30, 0.04, 6, false);
+  const rail = new THREE.Mesh(railGeo, trimMat);
+  rail.castShadow = true;
+  innerBoatGroup.add(rail);
+}
+addRail(true);
+addRail(false);
+
+// 3. Seats (Thwarts)
+const seats = [0.25, 0.5, 0.75];
+seats.forEach(u => {
+  let z = (u - 0.5) * boatLength;
+  let beam = Math.sin(u * Math.PI) * (1.0 + u * 0.2);
+  let seatW = beam * boatWidth * 0.95;
+  let y = boatDepth * 0.65 + Math.pow(Math.abs(u - 0.5) * 2, 2.5) * 0.4 * 0.65;
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(seatW, 0.04, 0.25), seatMat);
+  seat.position.set(0, y, z);
+  seat.castShadow = true;
+  seat.receiveShadow = true;
+  innerBoatGroup.add(seat);
+});
+
+// 4. Ribs (transverse structural supports)
+for (let i = 1; i <= 9; i++) {
+  let u = i / 10;
+  let z = (u - 0.5) * boatLength;
+  let beam = Math.sin(u * Math.PI) * (1.0 + u * 0.2);
+  let localWidth = beam * boatWidth / 2;
+  const ribPath = new THREE.Curve();
+  ribPath.getPoint = function(t) {
+    let v = (t - 0.5) * 2.0;
+    let absV = Math.abs(v);
+    let x = Math.sign(v) * localWidth * Math.pow(absV, 0.75);
+    let y = boatDepth * Math.pow(absV, 1.2);
+    let sheer = Math.pow(Math.abs(u - 0.5) * 2, 2.5) * 0.4;
+    y += sheer * absV;
+    return new THREE.Vector3(x * 0.96, y + 0.02, z);
+  };
+  const rib = new THREE.Mesh(new THREE.TubeGeometry(ribPath, 16, 0.02, 5, false), darkMat);
+  innerBoatGroup.add(rib);
+}
+
+// 4.5. Floorboards (to cover any water intersection inside)
+const floorGroup = new THREE.Group();
+const numPlanks = 5;
+const plankW = 0.14;
+for(let i = -2; i <= 2; i++) {
+  const plankLength = boatLength * 0.75 - Math.abs(i) * 0.5;
+  const plank = new THREE.Mesh(new THREE.BoxGeometry(plankW - 0.015, 0.02, plankLength), trimMat);
+  plank.position.set(i * plankW, 0.08, 0); // y=0.08 is above the water line
+  plank.receiveShadow = true;
+  plank.castShadow = true;
+  floorGroup.add(plank);
+}
+innerBoatGroup.add(floorGroup);
+
+// 5. Oars
 const paddleGroup = new THREE.Group();
-const paddleShaft = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.02, 0.02, 1.8, 6),
-  new THREE.MeshStandardMaterial({ color:0x8B7355, roughness:0.5 })
-);
-paddleShaft.rotation.z = Math.PI/2;
-paddleGroup.add(paddleShaft);
-const blade1 = new THREE.Mesh(
-  new THREE.BoxGeometry(0.02, 0.15, 0.35),
-  new THREE.MeshStandardMaterial({ color:0xcc5522, roughness:0.5 })
-);
-blade1.position.set(0.9, 0, 0);
-blade1.rotation.x = 0.3;
-paddleGroup.add(blade1);
-const blade2 = blade1.clone();
-blade2.position.x = -0.9;
-blade2.rotation.x = -0.3;
-paddleGroup.add(blade2);
-paddleGroup.position.set(0, 0.45, 0);
-kayakGroup.add(paddleGroup);
+let oarLeft, oarRight;
+function createOar(isRight) {
+  const oar = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 2.2, 8), oarMat);
+  shaft.rotation.z = Math.PI / 2;
+  shaft.position.x = isRight ? 0.6 : -0.6;
+  oar.add(shaft);
+  
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.015), oarMat);
+  blade.position.set(isRight ? 1.5 : -1.5, 0, 0);
+  blade.rotation.x = isRight ? 0.1 : -0.1;
+  oar.add(blade);
+  
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.15, 8), darkMat);
+  handle.rotation.z = Math.PI / 2;
+  handle.position.x = isRight ? -0.4 : 0.4;
+  oar.add(handle);
+  
+  let u = 0.5;
+  let beam = Math.sin(u * Math.PI) * (1.0 + u * 0.2);
+  let localWidth = beam * boatWidth / 2;
+  let x = (isRight ? 1 : -1) * (localWidth + 0.05);
+  let y = boatDepth + 0.05;
+  
+  oar.position.set(x, y, 0);
+  
+  const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.08, 6), new THREE.MeshStandardMaterial({color:0x777777}));
+  pin.position.set(x, y-0.04, 0);
+  innerBoatGroup.add(pin);
+  
+  return oar;
+}
+oarRight = createOar(true);
+oarLeft = createOar(false);
+
+oarLeft.rotation.y = -0.1;
+oarLeft.rotation.z = 0.1;
+oarRight.rotation.y = 0.1;
+oarRight.rotation.z = -0.1;
+
+paddleGroup.add(oarLeft);
+paddleGroup.add(oarRight);
+innerBoatGroup.add(paddleGroup);
 
 kayakGroup.position.set(-3, waterY + 0.08, 9);
 kayakGroup.rotation.y = Math.PI/2;
@@ -2322,7 +2443,7 @@ document.getElementById('nightModeToggle').addEventListener('change', (e) => {
 });
 
 let envNightProgress = 0;
-const daySky = new THREE.Color(0xc8d8e8);
+const daySky = new THREE.Color(0xaaccff);
 const nightSky = new THREE.Color(0x060b14);
 
 /* ---------- resize ---------- */
@@ -2407,9 +2528,26 @@ function applyMovement(dt){
     // Paddle animation — more paddling when moving faster
     const speedRatio = Math.abs(kayakVel.forward) / kayakMaxSpeed;
     if(speedRatio > 0.05){
-      paddleAnimT += dt * (3 + speedRatio * 4);
-      paddleGroup.rotation.z = Math.sin(paddleAnimT) * 0.6;
-      paddleGroup.position.x = Math.sin(paddleAnimT) * 0.15;
+      paddleAnimT += dt * (3 + speedRatio * 4) * Math.sign(kayakVel.forward);
+      let sweep = Math.sin(paddleAnimT) * 0.5;
+      let dip = -Math.cos(paddleAnimT) * 0.15;
+      const oLeft = paddleGroup.children[0];
+      const oRight = paddleGroup.children[1];
+      if (oLeft && oRight) {
+        oLeft.rotation.y = sweep - 0.1;
+        oLeft.rotation.z = dip + 0.1;
+        oRight.rotation.y = -sweep + 0.1;
+        oRight.rotation.z = -dip - 0.1;
+      }
+    } else {
+      const oLeft = paddleGroup.children[0];
+      const oRight = paddleGroup.children[1];
+      if (oLeft && oRight) {
+        oLeft.rotation.y += (-0.1 - oLeft.rotation.y) * 0.1;
+        oLeft.rotation.z += (0.1 - oLeft.rotation.z) * 0.1;
+        oRight.rotation.y += (0.1 - oRight.rotation.y) * 0.1;
+        oRight.rotation.z += (-0.1 - oRight.rotation.z) * 0.1;
+      }
     }
   } else {
     // Watering can movement — velocity-based with acceleration and friction

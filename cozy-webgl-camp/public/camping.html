@@ -339,7 +339,7 @@ ground.rotation.x = -Math.PI/2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// soil patches for 5 plants
+// Farm area / soil patches for 5 plants
 const soilPositions = [
   new THREE.Vector3(3.5, 0.01, 1),
   new THREE.Vector3(5.0, 0.01, 1.2),
@@ -347,14 +347,64 @@ const soilPositions = [
   new THREE.Vector3(5.8, 0.01, 2.3),
   new THREE.Vector3(2.8, 0.01, 2.5)
 ];
+
+// Create a realistic bordered farm plot
+const gardenW = 4.4;
+const gardenD = 3.2;
+const gardenX = 4.3; 
+const gardenZ = 1.9; 
+
+const farmGroup = new THREE.Group();
+farmGroup.position.set(gardenX, 0.01, gardenZ);
+
+// Main tilled soil patch (slightly uneven)
+const soilGeo = new THREE.PlaneGeometry(gardenW, gardenD, 12, 12);
+const posAttrs = soilGeo.attributes.position;
+for(let i=0; i<posAttrs.count; i++){
+    let x = posAttrs.getX(i);
+    let y = posAttrs.getY(i);
+    let dist = Math.sqrt(x*x + y*y);
+    let maxDist = Math.sqrt((gardenW/2)**2 + (gardenD/2)**2);
+    let height = (1 - dist/maxDist) * 0.08 + Math.random() * 0.03;
+    posAttrs.setZ(i, height); 
+}
+soilGeo.computeVertexNormals();
+const soilMesh = new THREE.Mesh(
+  soilGeo,
+  new THREE.MeshStandardMaterial({ color:0x3a2211, roughness:0.95 })
+);
+soilMesh.rotation.x = -Math.PI/2;
+soilMesh.receiveShadow = true;
+farmGroup.add(soilMesh);
+
+// Wooden log borders
+const logMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1.0 });
+for(let z of [-gardenD/2, gardenD/2]) {
+  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, gardenW+0.2, 6), logMat);
+  log.rotation.z = Math.PI/2;
+  log.position.set(0, 0.05, z);
+  log.castShadow = true;
+  farmGroup.add(log);
+}
+for(let x of [-gardenW/2, gardenW/2]) {
+  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, gardenD+0.2, 6), logMat);
+  log.rotation.x = Math.PI/2;
+  log.position.set(x, 0.05, 0);
+  log.castShadow = true;
+  farmGroup.add(log);
+}
+scene.add(farmGroup);
+
+// Add small rich dirt mounds exactly at the plant roots
 soilPositions.forEach(pos => {
-  const soil = new THREE.Mesh(
-    new THREE.CircleGeometry(0.9, 24),
-    new THREE.MeshStandardMaterial({ color:0x3a2414, roughness:1 })
+  const mound = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 8, 6, 0, Math.PI*2, 0, Math.PI/2),
+    new THREE.MeshStandardMaterial({ color:0x2a180a, roughness:1 })
   );
-  soil.rotation.x = -Math.PI/2;
-  soil.position.copy(pos);
-  scene.add(soil);
+  mound.position.copy(pos);
+  mound.position.y = 0.02; 
+  mound.scale.y = 0.3; // flatten the mound
+  scene.add(mound);
 });
 
 /* ---------- river ---------- */
